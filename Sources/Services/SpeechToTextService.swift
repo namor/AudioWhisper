@@ -35,9 +35,12 @@ internal class SpeechToTextService {
     private let parakeetService = ParakeetService()
     private let keychainService: KeychainServiceProtocol
     private let correctionService = SemanticCorrectionService()
-    
-    init(keychainService: KeychainServiceProtocol = KeychainService.shared) {
+    let diarizationService: DiarizationServiceProtocol
+
+    init(keychainService: KeychainServiceProtocol = KeychainService.shared,
+         diarizationService: DiarizationServiceProtocol = DiarizationService()) {
         self.keychainService = keychainService
+        self.diarizationService = diarizationService
     }
     
     // Raw transcription without semantic correction
@@ -61,6 +64,42 @@ internal class SpeechToTextService {
             return try await transcribeWithLocal(audioURL: audioURL, model: model)
         case .parakeet:
             return try await transcribeWithParakeet(audioURL: audioURL)
+        }
+    }
+
+    func transcribeRawWithDiarization(
+        audioURL: URL,
+        model: WhisperModel,
+        progressCallback: (@Sendable (String) -> Void)? = nil
+    ) async throws -> (text: String, speakerTurns: [SpeakerTurn]?) {
+        let validationResult = await AudioValidator.validateAudioFile(at: audioURL)
+        switch validationResult {
+        case .valid(_): break
+        case .invalid(let error):
+            throw SpeechToTextError.transcriptionFailed(error.localizedDescription)
+        }
+
+        do {
+            async let asrResult = localWhisperService.transcribeWithSegments(
+                audioFileURL: audioURL, model: model, progressCallback: progressCallback
+            )
+            async let diarResult = diarizationService.diarize(audioURL: audioURL)
+
+            let asr = try await asrResult
+            let text = Self.cleanTranscriptionText(asr.text)
+
+            let diar: [(speakerId: String, start: TimeInterval, end: TimeInterval)]
+            do {
+                diar = try await diarResult
+            } catch {
+                Logger.speechToText.warning("Diarization failed, returning flat text: \(error.localizedDescription)")
+                return (text: text, speakerTurns: nil)
+            }
+
+            let turns = DiarizationService.align(asrSegments: asr.segments, diarSegments: diar)
+            return (text: text, speakerTurns: turns.isEmpty ? nil : turns)
+        } catch {
+            throw SpeechToTextError.localTranscriptionFailed(error)
         }
     }
 

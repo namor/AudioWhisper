@@ -20,7 +20,22 @@ internal final class TranscriptionRecord {
     var sourceAppBundleId: String?
     var sourceAppName: String?
     var sourceAppIconData: Data?
-    
+
+    // Speaker diarization
+    var speakerTurnsData: Data?
+    var numSpeakers: Int?
+
+    var speakerTurns: [SpeakerTurn]? {
+        get {
+            guard let data = speakerTurnsData else { return nil }
+            return try? JSONDecoder().decode([SpeakerTurn].self, from: data)
+        }
+        set {
+            speakerTurnsData = newValue.flatMap { try? JSONEncoder().encode($0) }
+            numSpeakers = newValue.map { Set($0.map(\.speakerId)).count }
+        }
+    }
+
     init(
         text: String,
         provider: TranscriptionProvider,
@@ -30,7 +45,8 @@ internal final class TranscriptionRecord {
         characterCount: Int = 0,
         sourceAppBundleId: String? = nil,
         sourceAppName: String? = nil,
-        sourceAppIconData: Data? = nil
+        sourceAppIconData: Data? = nil,
+        speakerTurns: [SpeakerTurn]? = nil
     ) {
         self.id = UUID()
         self.text = text
@@ -43,6 +59,10 @@ internal final class TranscriptionRecord {
         self.sourceAppBundleId = sourceAppBundleId
         self.sourceAppName = sourceAppName
         self.sourceAppIconData = sourceAppIconData
+        if let speakerTurns {
+            self.speakerTurnsData = try? JSONEncoder().encode(speakerTurns)
+            self.numSpeakers = Set(speakerTurns.map(\.speakerId)).count
+        }
     }
 }
 

@@ -35,6 +35,13 @@ internal struct DashboardProvidersView: View {
     @State var modelDownloadStates: [WhisperModel: Bool] = [:]
     @State var downloadStartTime: [WhisperModel: Date] = [:]
     
+    // Diarization settings
+    @AppStorage(AppDefaults.Keys.diarizationEnabled) var diarizationEnabled = false
+    @State var isDiarizationPreparing = false
+    @State var isDiarizationReady = false
+    @State var diarizationStatusMessage: String?
+    let sharedDiarizationService: DiarizationServiceProtocol = DiarizationService()
+
     // Correction UI state
     @State var mlxModelManager = MLXModelManager.shared
     @State private var isRefreshingMLXModels = false
@@ -80,6 +87,14 @@ internal struct DashboardProvidersView: View {
             } footer: {
                 Text("Clean up grammar, punctuation, and filler words after transcription.")
             }
+
+            Section {
+                diarizationSection
+            } header: {
+                Text("Speaker Diarization")
+            } footer: {
+                Text("Detect and label speakers in multi-speaker recordings. Requires Apple Silicon.")
+            }
         }
         .formStyle(.grouped)
         .sheet(isPresented: $showSetupSheet) {
@@ -95,6 +110,9 @@ internal struct DashboardProvidersView: View {
             loadAPIKeys()
             loadModelStates()
             checkEnvReady()
+            if diarizationEnabled && !isDiarizationReady {
+                isDiarizationReady = DiarizationService.areModelsOnDisk()
+            }
             Task {
                 isRefreshingMLXModels = true
                 await mlxModelManager.refreshModelList()

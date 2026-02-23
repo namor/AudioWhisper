@@ -10,12 +10,18 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/Alamofire/Alamofire.git", from: "5.10.2"),
         .package(url: "https://github.com/soffes/HotKey", from: "0.2.1"),
-        .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.15.0")
+        .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.15.0"),
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.7.9")
     ],
     targets: [
         .executableTarget(
             name: "AudioWhisper",
-            dependencies: ["Alamofire", "HotKey", "WhisperKit"],
+            dependencies: [
+                "Alamofire",
+                "HotKey",
+                "WhisperKit",
+                .product(name: "FluidAudio", package: "FluidAudio"),
+            ],
             path: "Sources",
             exclude: ["VersionInfo.swift.template"],
             resources: [

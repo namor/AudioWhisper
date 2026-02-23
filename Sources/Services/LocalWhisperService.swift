@@ -141,37 +141,44 @@ internal final class LocalWhisperService: Sendable {
         memoryPressureSource?.cancel()
     }
     
+    internal struct SegmentedResult: Sendable {
+        let text: String
+        let segments: [(text: String, start: Float, end: Float)]
+    }
+
     func transcribe(audioFileURL: URL, model: WhisperModel, progressCallback: (@Sendable (String) -> Void)? = nil) async throws -> String {
+        let result = try await transcribeWithSegments(audioFileURL: audioFileURL, model: model, progressCallback: progressCallback)
+        return result.text
+    }
+
+    func transcribeWithSegments(audioFileURL: URL, model: WhisperModel, progressCallback: (@Sendable (String) -> Void)? = nil) async throws -> SegmentedResult {
         let modelName = model.whisperKitModelName
 
-        // Get or create WhisperKit instance from actor-isolated cache
         let whisperKit = try await cache.getOrCreate(modelName: modelName, model: model, maxCached: maxCachedModels, progressCallback: progressCallback)
 
-        // Provide helpful progress messaging with duration estimate
         let durationHint = getDurationHint(for: model)
         progressCallback?("Transcribing audio... \(durationHint)")
 
-        // Configure decoding options for transcription (not translation)
-        // task: .transcribe ensures X→X speech recognition (preserves original language)
-        // task: .translate would perform X→English translation
         var decodingOptions = DecodingOptions()
         decodingOptions.task = .transcribe
-        // Let WhisperKit auto-detect the language
         decodingOptions.language = nil
 
-        // Transcribe the audio file
         progressCallback?("Processing audio...")
         let results = try await whisperKit.transcribe(audioPath: audioFileURL.path, decodeOptions: decodingOptions)
 
-        // Combine all transcription segments into a single text
-        let transcription = results.map { $0.text }.joined(separator: " ")
+        let allSegments = results.flatMap { $0.segments }
+        let transcription = allSegments.map(\.text).joined(separator: " ")
 
         guard !transcription.isEmpty else {
             throw LocalWhisperError.transcriptionFailed
         }
 
         progressCallback?("Transcription complete!")
-        return transcription.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        let mapped = allSegments.map { (text: $0.text, start: $0.start, end: $0.end) }
+        return SegmentedResult(
+            text: transcription.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
+            segments: mapped
+        )
     }
     
     

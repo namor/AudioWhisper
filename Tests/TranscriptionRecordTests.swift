@@ -176,4 +176,50 @@ final class TranscriptionRecordTests: XCTestCase {
         )
         XCTAssertNil(noModelRecord.whisperModel)
     }
+
+    // MARK: - Speaker Turn Encoding
+
+    func testSpeakerTurnsRoundTrip() {
+        let turns = [
+            SpeakerTurn(speakerId: "Speaker 1", displayName: "Alice", start: 0.0, end: 2.5, text: "Hello"),
+            SpeakerTurn(speakerId: "Speaker 2", displayName: nil, start: 2.5, end: 5.0, text: "Hi there"),
+        ]
+        let record = TranscriptionRecord(text: "Hello Hi there", provider: .local, speakerTurns: turns)
+
+        XCTAssertNotNil(record.speakerTurnsData)
+        XCTAssertEqual(record.numSpeakers, 2)
+
+        let decoded = record.speakerTurns
+        XCTAssertEqual(decoded?.count, 2)
+        XCTAssertEqual(decoded?[0].displayName, "Alice")
+        XCTAssertEqual(decoded?[1].text, "Hi there")
+    }
+
+    func testSpeakerTurnsNilByDefault() {
+        let record = TranscriptionRecord(text: "Plain text", provider: .openai)
+        XCTAssertNil(record.speakerTurnsData)
+        XCTAssertNil(record.numSpeakers)
+        XCTAssertNil(record.speakerTurns)
+    }
+
+    func testSpeakerTurnsSetterUpdatesNumSpeakers() {
+        let record = TranscriptionRecord(text: "Test", provider: .local)
+        record.speakerTurns = [
+            SpeakerTurn(speakerId: "Speaker 1", start: 0, end: 1, text: "A"),
+            SpeakerTurn(speakerId: "Speaker 2", start: 1, end: 2, text: "B"),
+            SpeakerTurn(speakerId: "Speaker 1", start: 2, end: 3, text: "C"),
+        ]
+        XCTAssertEqual(record.numSpeakers, 2)
+    }
+
+    func testSpeakerTurnsClearable() {
+        let record = TranscriptionRecord(text: "Test", provider: .local, speakerTurns: [
+            SpeakerTurn(speakerId: "Speaker 1", start: 0, end: 1, text: "A"),
+        ])
+        XCTAssertNotNil(record.speakerTurns)
+
+        record.speakerTurns = nil
+        XCTAssertNil(record.speakerTurnsData)
+        XCTAssertNil(record.numSpeakers)
+    }
 }

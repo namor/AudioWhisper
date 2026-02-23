@@ -98,6 +98,14 @@ internal enum WhisperModel: String, CaseIterable, Codable, Sendable {
     }
 }
 
+internal struct SpeakerTurn: Codable, Hashable, Sendable {
+    let speakerId: String
+    var displayName: String?
+    let start: TimeInterval
+    let end: TimeInterval
+    let text: String
+}
+
 internal enum ParakeetModel: String, CaseIterable, Codable, Sendable {
     case v2English = "mlx-community/parakeet-tdt-0.6b-v2"
     case v3Multilingual = "mlx-community/parakeet-tdt-0.6b-v3"

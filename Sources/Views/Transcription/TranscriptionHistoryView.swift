@@ -52,6 +52,18 @@ internal struct TranscriptionHistoryView: View {
                 }
                 .disabled(selectedRecords.isEmpty)
 
+                if let record = primarySelection, record.speakerTurns != nil {
+                    Button {
+                        if let turns = record.speakerTurns {
+                            let text = formatWithSpeakers(turns)
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(text, forType: .string)
+                        }
+                    } label: {
+                        Label("Copy with Speakers", systemImage: "person.2.wave.2")
+                    }
+                }
+
                 Button(role: .destructive) {
                     showDeleteSelectedConfirmation = true
                 } label: {
@@ -247,11 +259,15 @@ private struct TranscriptionDetailView: View {
 
             Divider()
 
-            ScrollView {
-                Text(record.text)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
+            if let turns = record.speakerTurns, !turns.isEmpty {
+                DiarizedTranscriptView(turns: turns)
+            } else {
+                ScrollView {
+                    Text(record.text)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                }
             }
         }
     }
@@ -295,9 +311,99 @@ private struct TranscriptionDetailView: View {
                     Text(wpm.formatted(.number.precision(.fractionLength(0))))
                 }
             }
+
+            if let n = record.numSpeakers, n > 0 {
+                LabeledContent("Speakers") {
+                    Text("\(n)")
+                }
+            }
         }
         .font(.callout)
     }
+}
+
+// MARK: - Diarized Transcript View
+
+private struct DiarizedTranscriptView: View {
+    let turns: [SpeakerTurn]
+
+    private static let speakerColors: [Color] = [
+        .blue, .green, .orange, .purple, .pink, .teal, .indigo, .brown
+    ]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("\(Set(turns.map(\.speakerId)).count) speakers detected")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 4)
+
+                ForEach(Array(turns.enumerated()), id: \.offset) { _, turn in
+                    turnRow(turn)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
+        }
+        .contextMenu {
+            Button("Copy Text") {
+                let flat = turns.map(\.text).joined(separator: " ")
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(flat, forType: .string)
+            }
+            Button("Copy with Speakers") {
+                let formatted = formatWithSpeakers(turns)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(formatted, forType: .string)
+            }
+        }
+    }
+
+    private func turnRow(_ turn: SpeakerTurn) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Circle()
+                .fill(colorFor(turn.speakerId))
+                .frame(width: 10, height: 10)
+                .padding(.top, 4)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(turn.displayName ?? turn.speakerId)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(colorFor(turn.speakerId))
+
+                    Text(formatTime(turn.start) + " – " + formatTime(turn.end))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+
+                Text(turn.text)
+                    .font(.callout)
+            }
+        }
+    }
+
+    private func colorFor(_ speakerId: String) -> Color {
+        let sortedIds = Array(Set(turns.map(\.speakerId))).sorted()
+        let index = sortedIds.firstIndex(of: speakerId) ?? 0
+        return Self.speakerColors[index % Self.speakerColors.count]
+    }
+
+    private func formatTime(_ seconds: TimeInterval) -> String {
+        let mins = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        return String(format: "%d:%02d", mins, secs)
+    }
+}
+
+internal func formatWithSpeakers(_ turns: [SpeakerTurn]) -> String {
+    turns.map { turn in
+        let name = turn.displayName ?? turn.speakerId
+        return "\(name): \(turn.text)"
+    }.joined(separator: "\n")
 }
 
 // MARK: - Preview
