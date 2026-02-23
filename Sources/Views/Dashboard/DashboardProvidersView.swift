@@ -40,7 +40,7 @@ internal struct DashboardProvidersView: View {
     @State var isDiarizationPreparing = false
     @State var isDiarizationReady = false
     @State var diarizationStatusMessage: String?
-    let sharedDiarizationService: DiarizationServiceProtocol = DiarizationService()
+    internal let sharedDiarizationService: DiarizationServiceProtocol = DiarizationService()
 
     // Correction UI state
     @State var mlxModelManager = MLXModelManager.shared
