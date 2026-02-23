@@ -60,6 +60,15 @@ internal struct CategoryDefinition: Identifiable, Codable, Equatable, Hashable {
             isSystem: true
         ),
         CategoryDefinition(
+            id: "dnd",
+            displayName: "D&D / TTRPG",
+            icon: "theatermasks.fill",
+            colorHex: "#8B5CF6",
+            promptDescription: "DM priority, OOC tagging, spell/dice/class terms. Fixes: 'dee twenty' → 'd20', 'pallid in' → 'Paladin'",
+            promptTemplate: Self.dndPrompt,
+            isSystem: true
+        ),
+        CategoryDefinition(
             id: "general",
             displayName: "General",
             icon: "square.grid.2x2",
@@ -136,6 +145,45 @@ internal extension CategoryDefinition {
             - Improve sentence structure for politeness and clarity if needed
             - Infer and correct common homophones or misrecognitions based on context (e.g., 'sand' -> 'send', 'attach meant' -> 'attachment')
             - Handle fragmented thoughts by forming coherent paragraphs
+            - Do not add or invent content; keep original intent
+            Output only the corrected text.
+            """
+
+    static let dndPrompt = """
+            Clean up this speech transcription from a Dungeons & Dragons or tabletop RPG session.
+
+            SPEAKER CONTEXT:
+            - Prioritize the Dungeon Master (DM/GM): they narrate scenes, voice NPCs, describe environments, and adjudicate rules.
+            - When speakers reference character names ("as Thorin, I say...") or adopt distinct character voices, preserve the character attribution.
+            - Mark out-of-character (OOC) / "above the table" speech with [OOC] — this includes: rules questions ("wait, does that provoke?"), snack/break requests, scheduling, dice clarifications, real-world tangents, meta-game discussion ("what should we do here?"), and any chatter not part of the in-game narrative.
+
+            PRESERVE D&D TERMINOLOGY:
+            - Classes: Barbarian, Bard, Cleric, Druid, Fighter, Monk, Paladin, Ranger, Rogue, Sorcerer, Warlock, Wizard, Artificer, Blood Hunter
+            - Races/Species: Human, Elf, Dwarf, Halfling, Gnome, Half-Orc, Half-Elf, Tiefling, Dragonborn, Aasimar, Goliath, Tabaxi, Kenku, Firbolg, Genasi, Changeling, Warforged
+            - Spells (capitalize each word): Fireball, Magic Missile, Eldritch Blast, Healing Word, Shield, Counterspell, Misty Step, Thunderwave, Cure Wounds, Revivify, Dispel Magic, Detect Magic, Mage Hand, Prestidigitation, Thaumaturgy, Wish, Power Word Kill, Mage Armor, Hunter's Mark, Hex, Spiritual Weapon, Spirit Guardians, Guiding Bolt
+            - Mechanics: hit points (HP), armor class (AC), saving throw, ability check, attack roll, damage roll, initiative, advantage, disadvantage, proficiency bonus, spell slot, concentration, reaction, bonus action, opportunity attack, death saving throw, short rest, long rest, cantrip, ritual casting, passive Perception, difficulty class (DC)
+            - Ability Scores: Strength (STR), Dexterity (DEX), Constitution (CON), Intelligence (INT), Wisdom (WIS), Charisma (CHA)
+            - Skills: Perception, Investigation, Insight, Persuasion, Deception, Intimidation, Stealth, Athletics, Acrobatics, Arcana, History, Nature, Religion, Medicine, Survival, Animal Handling, Performance, Sleight of Hand
+            - Dice: d4, d6, d8, d10, d12, d20, d100; "nat 20", "nat 1", "crit"
+            - Items: Bag of Holding, Deck of Many Things, vorpal, +1/+2/+3 weapons, potion of healing, attunement
+            - Settings: Forgotten Realms, Faerûn, Sword Coast, Waterdeep, Baldur's Gate, Neverwinter, Underdark, Feywild, Shadowfell, Ravenloft, Eberron, Wildemount, Exandria, Greyhawk
+            - Preserve ALL NPC names, place names, and campaign-specific proper nouns exactly as spoken
+
+            COMMON MISRECOGNITIONS:
+            - "pallid in" / "palace in" → "Paladin", "tie fling" → "Tiefling", "half ling" → "Halfling"
+            - "bar barrier in" / "bar berean" → "Barbarian", "can trip" → "cantrip"
+            - "eldridge" / "old rich" → "Eldritch", "may lay" / "meh lee" → "melee"
+            - "dee twenty" / "dee 20" → "d20", "to dee six" / "2 dee 6" → "2d6", "natural twenty" → "nat 20"
+            - "a c" / "ay see" → "AC", "h p" / "aych pee" → "HP", "d c" / "dee see" → "DC"
+            - "d m" / "dee em" → "DM", "n p c" / "en pee see" → "NPC", "p c" → "PC"
+            - "fire bolt" → "Firebolt", "magic missile" → "Magic Missile", "mage armor" → "Mage Armor"
+            - "presti digit ation" → "Prestidigitation", "thaw mature gee" → "Thaumaturgy"
+            - "dragon born" → "Dragonborn", "war forged" → "Warforged", "fire boulg" → "Firbolg"
+
+            FORMATTING:
+            - Remove filler words (um, uh, like, you know) unless clearly part of a character's speech pattern
+            - Fix typos and grammar while preserving each speaker's natural voice and character personality
+            - Preserve dramatic narration, NPC dialogue quotes, and emotional tone from the DM
             - Do not add or invent content; keep original intent
             Output only the corrected text.
             """

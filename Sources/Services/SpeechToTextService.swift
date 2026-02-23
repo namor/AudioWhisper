@@ -96,7 +96,11 @@ internal class SpeechToTextService {
                 return (text: text, speakerTurns: nil)
             }
 
+            let uniqueDiarSpeakers = Set(diar.map { $0.speakerId })
+            Logger.speechToText.info("Diarization returned \(diar.count) segments with \(uniqueDiarSpeakers.count) speakers; ASR produced \(asr.segments.count) segments")
             let turns = DiarizationService.align(asrSegments: asr.segments, diarSegments: diar)
+            let uniqueTurnSpeakers = turns.isEmpty ? 0 : Set(turns.map(\.speakerId)).count
+            Logger.speechToText.info("Alignment produced \(turns.count) turns with \(uniqueTurnSpeakers) speakers")
             return (text: text, speakerTurns: turns.isEmpty ? nil : turns)
         } catch {
             throw SpeechToTextError.localTranscriptionFailed(error)

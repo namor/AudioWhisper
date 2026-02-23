@@ -72,8 +72,7 @@ final class DiarizationAlignmentTests: XCTestCase {
             (text: "Hello", start: 0.0, end: 1.0),
         ]
         let turns = DiarizationService.align(asrSegments: asr, diarSegments: [])
-        XCTAssertEqual(turns.count, 1)
-        XCTAssertEqual(turns[0].speakerId, "Speaker 1")
+        XCTAssertTrue(turns.isEmpty)
     }
 
     func testAlignSpeakerRenumberedByFirstAppearance() {
@@ -132,6 +131,37 @@ final class DiarizationAlignmentTests: XCTestCase {
             diarSegments: [] as [(speakerId: String, start: TimeInterval, end: TimeInterval)]
         )
         XCTAssertTrue(turns.isEmpty)
+    }
+
+    func testAlignNoOverlapUsesNearestSegment() {
+        let asr: [(text: String, start: Float, end: Float)] = [
+            (text: "Gap speech", start: 5.0, end: 6.0),
+        ]
+        let diar: [(speakerId: String, start: TimeInterval, end: TimeInterval)] = [
+            (speakerId: "spk_0", start: 0.0, end: 2.0),
+            (speakerId: "spk_1", start: 8.0, end: 10.0),
+        ]
+        let turns = DiarizationService.align(asrSegments: asr, diarSegments: diar)
+
+        XCTAssertEqual(turns.count, 1)
+        // ASR midpoint 5.5 is closer to spk_0 midpoint (1.0) than spk_1 midpoint (9.0)
+        XCTAssertEqual(turns[0].speakerId, "Speaker 1")
+    }
+
+    func testAlignNoOverlapNearerToSecondSpeaker() {
+        let asr: [(text: String, start: Float, end: Float)] = [
+            (text: "Gap speech", start: 7.0, end: 8.0),
+        ]
+        let diar: [(speakerId: String, start: TimeInterval, end: TimeInterval)] = [
+            (speakerId: "spk_0", start: 0.0, end: 2.0),
+            (speakerId: "spk_1", start: 8.0, end: 10.0),
+        ]
+        let turns = DiarizationService.align(asrSegments: asr, diarSegments: diar)
+
+        XCTAssertEqual(turns.count, 1)
+        // ASR midpoint 7.5 is closer to spk_1 midpoint (9.0) than spk_0 midpoint (1.0)
+        XCTAssertEqual(turns[0].speakerId, "Speaker 1")
+        XCTAssertEqual(turns[0].text, "Gap speech")
     }
 
     // MARK: - Performance
