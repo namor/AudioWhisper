@@ -72,11 +72,27 @@ internal final class CategoryStore {
             let decoded = try JSONDecoder().decode([CategoryDefinition].self, from: data)
             if !decoded.isEmpty {
                 categories = decoded
+                mergeNewSystemDefaults()
                 rebuildIndex()
             }
         } catch {
             // If loading fails, keep defaults and ignore.
         }
+    }
+
+    private func mergeNewSystemDefaults() {
+        let existingIds = Set(categories.map(\.id))
+        let newDefaults = CategoryDefinition.defaults.filter { $0.isSystem && !existingIds.contains($0.id) }
+        guard !newDefaults.isEmpty else { return }
+        let generalIdx = categories.firstIndex(where: { $0.id == "general" })
+        for cat in newDefaults {
+            if let idx = generalIdx {
+                categories.insert(cat, at: idx)
+            } else {
+                categories.append(cat)
+            }
+        }
+        persist()
     }
 
     private func persist() {
