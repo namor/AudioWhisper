@@ -35,6 +35,9 @@ internal struct DashboardProvidersView: View {
     @State var modelDownloadStates: [WhisperModel: Bool] = [:]
     @State var downloadStartTime: [WhisperModel: Date] = [:]
     
+    // Live transcription settings
+    @AppStorage(AppDefaults.Keys.liveTranscriptionProvider) var liveTranscriptionProvider = AppDefaults.defaultLiveTranscriptionProvider
+
     // Diarization settings
     @AppStorage(AppDefaults.Keys.diarizationEnabled) var diarizationEnabled = false
     @State var isDiarizationPreparing = false
@@ -86,6 +89,14 @@ internal struct DashboardProvidersView: View {
                 Text("Semantic Correction")
             } footer: {
                 Text("Clean up grammar, punctuation, and filler words after transcription.")
+            }
+
+            Section {
+                liveTranscriptionSection
+            } header: {
+                Text("Live Transcription")
+            } footer: {
+                Text("Stream text while recording. FluidAudio uses the Parakeet model (downloads ~600 MB on first use).")
             }
 
             Section {
