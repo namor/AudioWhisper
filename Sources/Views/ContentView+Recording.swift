@@ -50,7 +50,20 @@ internal extension ContentView {
                 try Task.checkCancellation()
                 
                 let text: String
-                if transcriptionProvider == .local {
+                var speakerTurns: [SpeakerTurn]?
+                let diarizationEnabled = UserDefaults.standard.bool(forKey: AppDefaults.Keys.diarizationEnabled)
+
+                if diarizationEnabled && transcriptionProvider == .local {
+                    try await ensureWhisperModelIsReadyForTranscription(selectedWhisperModel)
+                    await MainActor.run { progressMessage = "Transcribing with speaker detection..." }
+                    let result = try await speechService.transcribeRawWithDiarization(
+                        audioURL: audioURL, model: selectedWhisperModel
+                    ) { progress in
+                        NotificationCenter.default.post(name: .transcriptionProgress, object: progress)
+                    }
+                    text = result.text
+                    speakerTurns = result.speakerTurns
+                } else if transcriptionProvider == .local {
                     try await ensureWhisperModelIsReadyForTranscription(selectedWhisperModel)
                     text = try await speechService.transcribeRaw(audioURL: audioURL, provider: transcriptionProvider, model: selectedWhisperModel)
                 } else {
@@ -92,7 +105,8 @@ internal extension ContentView {
                         characterCount: characterCount,
                         sourceAppBundleId: sourceInfo.bundleIdentifier,
                         sourceAppName: sourceInfo.displayName,
-                        sourceAppIconData: sourceInfo.iconData
+                        sourceAppIconData: sourceInfo.iconData,
+                        speakerTurns: speakerTurns
                     )
                     await DataManager.shared.saveTranscriptionQuietly(record)
                 }
@@ -164,7 +178,20 @@ internal extension ContentView {
                 try Task.checkCancellation()
 
                 let text: String
-                if transcriptionProvider == .local {
+                var speakerTurns: [SpeakerTurn]?
+                let diarizationEnabled = UserDefaults.standard.bool(forKey: AppDefaults.Keys.diarizationEnabled)
+
+                if diarizationEnabled && transcriptionProvider == .local {
+                    try await ensureWhisperModelIsReadyForTranscription(selectedWhisperModel)
+                    await MainActor.run { progressMessage = "Transcribing with speaker detection..." }
+                    let result = try await speechService.transcribeRawWithDiarization(
+                        audioURL: audioURL, model: selectedWhisperModel
+                    ) { progress in
+                        NotificationCenter.default.post(name: .transcriptionProgress, object: progress)
+                    }
+                    text = result.text
+                    speakerTurns = result.speakerTurns
+                } else if transcriptionProvider == .local {
                     try await ensureWhisperModelIsReadyForTranscription(selectedWhisperModel)
                     text = try await speechService.transcribeRaw(audioURL: audioURL, provider: transcriptionProvider, model: selectedWhisperModel)
                 } else {
@@ -210,7 +237,8 @@ internal extension ContentView {
                         characterCount: characterCount,
                         sourceAppBundleId: sourceInfo.bundleIdentifier,
                         sourceAppName: sourceInfo.displayName,
-                        sourceAppIconData: sourceInfo.iconData
+                        sourceAppIconData: sourceInfo.iconData,
+                        speakerTurns: speakerTurns
                     )
                     await DataManager.shared.saveTranscriptionQuietly(record)
                 }
@@ -324,7 +352,20 @@ internal extension ContentView {
                 try Task.checkCancellation()
                 
                 let text: String
-                if transcriptionProvider == .local {
+                var speakerTurns: [SpeakerTurn]?
+                let diarizationEnabled = UserDefaults.standard.bool(forKey: AppDefaults.Keys.diarizationEnabled)
+
+                if diarizationEnabled && transcriptionProvider == .local {
+                    try await ensureWhisperModelIsReadyForTranscription(selectedWhisperModel)
+                    await MainActor.run { progressMessage = "Retrying with speaker detection..." }
+                    let result = try await speechService.transcribeRawWithDiarization(
+                        audioURL: audioURL, model: selectedWhisperModel
+                    ) { progress in
+                        NotificationCenter.default.post(name: .transcriptionProgress, object: progress)
+                    }
+                    text = result.text
+                    speakerTurns = result.speakerTurns
+                } else if transcriptionProvider == .local {
                     text = try await speechService.transcribeRaw(audioURL: audioURL, provider: transcriptionProvider, model: selectedWhisperModel)
                 } else {
                     text = try await speechService.transcribeRaw(audioURL: audioURL, provider: transcriptionProvider)
@@ -346,7 +387,7 @@ internal extension ContentView {
                         progressMessage = "Semantic correction..."
                     }
                     let capturedBundleId: String? = await MainActor.run { currentSourceAppInfo().bundleIdentifier }
-                    Task.detached { [text, transcriptionProvider, capturedBundleId] in
+                    Task.detached { [text, transcriptionProvider, speakerTurns, capturedBundleId] in
                         let outcome = await semanticCorrectionService.correctWithWarning(text: text, providerUsed: transcriptionProvider, sourceAppBundleId: capturedBundleId)
                         if let warning = outcome.warning {
                             await MainActor.run { progressMessage = warning }
@@ -363,7 +404,8 @@ internal extension ContentView {
                                 modelUsed: modelUsed,
                                 sourceAppBundleId: sourceInfo.bundleIdentifier,
                                 sourceAppName: sourceInfo.displayName,
-                                sourceAppIconData: sourceInfo.iconData
+                                sourceAppIconData: sourceInfo.iconData,
+                                speakerTurns: speakerTurns
                             )
                             await DataManager.shared.saveTranscriptionQuietly(record)
                         }
@@ -385,7 +427,7 @@ internal extension ContentView {
                         showConfirmationAndPaste(text: text)
                     }
                     let capturedBundleId2: String? = await MainActor.run { currentSourceAppInfo().bundleIdentifier }
-                    Task.detached { [text, transcriptionProvider, capturedBundleId2] in
+                    Task.detached { [text, transcriptionProvider, speakerTurns, capturedBundleId2] in
                         let outcome = await semanticCorrectionService.correctWithWarning(text: text, providerUsed: transcriptionProvider, sourceAppBundleId: capturedBundleId2)
                         if let warning = outcome.warning {
                             await MainActor.run { progressMessage = warning }
@@ -404,7 +446,8 @@ internal extension ContentView {
                                 modelUsed: modelUsed,
                                 sourceAppBundleId: sourceInfo.bundleIdentifier,
                                 sourceAppName: sourceInfo.displayName,
-                                sourceAppIconData: sourceInfo.iconData
+                                sourceAppIconData: sourceInfo.iconData,
+                                speakerTurns: speakerTurns
                             )
                             await DataManager.shared.saveTranscriptionQuietly(record)
                         }

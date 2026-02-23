@@ -31,6 +31,8 @@ internal enum AppDefaults {
         static let hasCompletedWelcome = "hasCompletedWelcome"
         static let lastWelcomeVersion = "lastWelcomeVersion"
 
+        static let diarizationEnabled = "diarizationEnabled"
+
         static let hasSetupLocalLLM = "hasSetupLocalLLM"
         static let hasSetupParakeet = "hasSetupParakeet"
     }
@@ -70,6 +72,7 @@ internal enum AppDefaults {
             Keys.hasCompletedWelcome: false,
             Keys.lastWelcomeVersion: "0",
 
+            Keys.diarizationEnabled: false,
             Keys.hasSetupLocalLLM: false,
             Keys.hasSetupParakeet: false
         ])
