@@ -94,10 +94,13 @@ fi
 
 # Build for release
 echo "📦 Building for release..."
-swift build -c release --arch arm64 --arch x86_64
 
-# Check for the actual binary instead of exit code (swift-collections emits spurious errors)
-if [ ! -f ".build/apple/Products/Release/AudioWhisper" ]; then
+BINARY_PATH=""
+swift build -c release --arch arm64
+if [ -f ".build/arm64-apple-macosx/release/AudioWhisper" ]; then
+  BINARY_PATH=".build/arm64-apple-macosx/release/AudioWhisper"
+  echo "arm64 binary built"
+else
   echo "❌ Build failed - binary not found!"
   exit 1
 fi
@@ -111,8 +114,8 @@ mkdir -p AudioWhisper.app/Contents/Resources/bin
 # Set build number for Info.plist
 BUILD_NUMBER="${VERSION//./}"
 
-# Copy executable (universal binary)
-cp .build/apple/Products/Release/AudioWhisper AudioWhisper.app/Contents/MacOS/
+# Copy executable
+cp "$BINARY_PATH" AudioWhisper.app/Contents/MacOS/
 
 # Copy dashboard logo
 if [ -f "Sources/Resources/DashboardLogo.jpg" ]; then
@@ -211,7 +214,7 @@ cat >AudioWhisper.app/Contents/Info.plist <<EOF
     <key>NSMicrophoneUsageDescription</key>
     <string>AudioWhisper needs access to your microphone to record audio for transcription.</string>
     <key>LSUIElement</key>
-    <true/>
+    <false/>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSExceptionDomains</key>

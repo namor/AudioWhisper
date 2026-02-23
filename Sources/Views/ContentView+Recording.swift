@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import os.log
 
 internal extension ContentView {
     func startRecording() {
@@ -49,26 +50,7 @@ internal extension ContentView {
                 lastAudioURL = audioURL
                 try Task.checkCancellation()
                 
-                let text: String
-                var speakerTurns: [SpeakerTurn]?
-                let diarizationEnabled = UserDefaults.standard.bool(forKey: AppDefaults.Keys.diarizationEnabled)
-
-                if diarizationEnabled && transcriptionProvider == .local {
-                    try await ensureWhisperModelIsReadyForTranscription(selectedWhisperModel)
-                    await MainActor.run { progressMessage = "Transcribing with speaker detection..." }
-                    let result = try await speechService.transcribeRawWithDiarization(
-                        audioURL: audioURL, model: selectedWhisperModel
-                    ) { progress in
-                        NotificationCenter.default.post(name: .transcriptionProgress, object: progress)
-                    }
-                    text = result.text
-                    speakerTurns = result.speakerTurns
-                } else if transcriptionProvider == .local {
-                    try await ensureWhisperModelIsReadyForTranscription(selectedWhisperModel)
-                    text = try await speechService.transcribeRaw(audioURL: audioURL, provider: transcriptionProvider, model: selectedWhisperModel)
-                } else {
-                    text = try await speechService.transcribeRaw(audioURL: audioURL, provider: transcriptionProvider)
-                }
+                let (text, speakerTurns) = try await executeTranscription(audioURL: audioURL)
                 
                 try Task.checkCancellation()
                 
@@ -351,25 +333,7 @@ internal extension ContentView {
             do {
                 try Task.checkCancellation()
                 
-                let text: String
-                var speakerTurns: [SpeakerTurn]?
-                let diarizationEnabled = UserDefaults.standard.bool(forKey: AppDefaults.Keys.diarizationEnabled)
-
-                if diarizationEnabled && transcriptionProvider == .local {
-                    try await ensureWhisperModelIsReadyForTranscription(selectedWhisperModel)
-                    await MainActor.run { progressMessage = "Retrying with speaker detection..." }
-                    let result = try await speechService.transcribeRawWithDiarization(
-                        audioURL: audioURL, model: selectedWhisperModel
-                    ) { progress in
-                        NotificationCenter.default.post(name: .transcriptionProgress, object: progress)
-                    }
-                    text = result.text
-                    speakerTurns = result.speakerTurns
-                } else if transcriptionProvider == .local {
-                    text = try await speechService.transcribeRaw(audioURL: audioURL, provider: transcriptionProvider, model: selectedWhisperModel)
-                } else {
-                    text = try await speechService.transcribeRaw(audioURL: audioURL, provider: transcriptionProvider)
-                }
+                let (text, speakerTurns) = try await executeTranscription(audioURL: audioURL, isRetry: true)
                 
                 try Task.checkCancellation()
                 
@@ -469,6 +433,28 @@ internal extension ContentView {
         }
     }
     
+    private func executeTranscription(audioURL: URL, isRetry: Bool = false) async throws -> (text: String, speakerTurns: [SpeakerTurn]?) {
+        let diarizationEnabled = UserDefaults.standard.bool(forKey: AppDefaults.Keys.diarizationEnabled)
+
+        if transcriptionProvider == .local {
+            try await ensureWhisperModelIsReadyForTranscription(selectedWhisperModel)
+            if diarizationEnabled {
+                await MainActor.run { progressMessage = isRetry ? "Retrying with speaker detection..." : "Transcribing with speaker detection..." }
+                return try await speechService.transcribeRawWithDiarization(
+                    audioURL: audioURL, model: selectedWhisperModel
+                ) { progress in
+                    NotificationCenter.default.post(name: .transcriptionProgress, object: progress)
+                }
+            } else {
+                let text = try await speechService.transcribeRaw(audioURL: audioURL, provider: transcriptionProvider, model: selectedWhisperModel)
+                return (text, nil)
+            }
+        } else {
+            let text = try await speechService.transcribeRaw(audioURL: audioURL, provider: transcriptionProvider)
+            return (text, nil)
+        }
+    }
+
     func showLastAudioFile() {
         guard let audioURL = lastAudioURL else {
             errorMessage = "No audio file available to show."
@@ -495,16 +481,18 @@ internal extension ContentView {
     }
 
     func startWhisperModelDownloadIfNeeded(_ model: WhisperModel) {
-        guard !WhisperKitStorage.isModelDownloaded(model) else { return }
+        let onDisk = WhisperKitStorage.isModelDownloaded(model)
+        if onDisk { return }
         guard !(modelManager.downloadStages[model]?.isActive ?? false) else { return }
         guard !modelManager.downloadingModels.contains(model) else { return }
 
+        Logger.app.info("startWhisperModelDownloadIfNeeded: model \(model.rawValue) not on disk, triggering download")
         Task {
             do {
                 try await modelManager.downloadModel(model)
                 await modelManager.refreshModelStates()
             } catch {
-                // Don't alert while recording; the transcription flow will surface errors if the model is still missing.
+                Logger.app.error("Background model download failed: \(error.localizedDescription)")
             }
         }
     }
