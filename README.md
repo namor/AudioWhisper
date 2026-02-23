@@ -3,7 +3,7 @@
 A lightweight macOS menu bar app for quick audio transcription using OpenAI Whisper, Google Gemini, Local WhisperKit, or Parakeet‑MLX. Press a hotkey, record your thoughts, and get instant text that's automatically copied to your clipboard.
 
 <p align="center">
-  <img src="https://github.com/mazdak/AudioWhisper/blob/master/AudioWhisperIcon.png" width="128" height="128" alt="AudioWhisper Icon">
+  <img src="https://github.com/namor/AudioWhisper/blob/master/AudioWhisperIcon.png" width="128" height="128" alt="AudioWhisper Icon">
 </p>
 
 ## Features ✨
@@ -39,7 +39,7 @@ A lightweight macOS menu bar app for quick audio transcription using OpenAI Whis
 ### Option 1: Homebrew (Recommended)
 ```bash
 # Tap the repository (one-time setup)
-brew tap mazdak/tap
+brew tap namor/tap
 
 # Install AudioWhisper
 brew install audiowhisper
@@ -53,17 +53,17 @@ To update:
 brew upgrade audiowhisper
 ```
 
-> **Note**: The `mazdak/tap` repository also includes other tools like [LazyRedis](https://github.com/mazdak/lazyredis)
+> **Note**: The `namor/tap` repository also includes other tools like [LazyRedis](https://github.com/namor/lazyredis)
 
 ### Option 2: Download Pre-built App
-1. Download the latest release from [Releases](https://github.com/mazdak/AudioWhisper/releases)
+1. Download the latest release from [Releases](https://github.com/namor/AudioWhisper/releases)
 2. Drag AudioWhisper.app to your Applications folder
 3. Launch and configure your API key through the Dashboard
 
 ### Option 3: Build from Source
 ```bash
 # Clone the repository
-git clone https://github.com/mazdak/AudioWhisper.git
+git clone https://github.com/namor/AudioWhisper.git
 cd AudioWhisper
 
 # Build the app
@@ -160,7 +160,7 @@ The recording window shows helpful instructions at the bottom:
 ### Development Build
 ```bash
 # Clone the repository
-git clone https://github.com/mazdak/AudioWhisper.git
+git clone https://github.com/namor/AudioWhisper.git
 cd AudioWhisper
 
 # Run in development mode

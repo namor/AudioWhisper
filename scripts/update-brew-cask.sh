@@ -28,7 +28,7 @@ fi
 # Check if tap repo exists
 if [ ! -d "$TAP_REPO" ]; then
     echo "❌ Error: homebrew-tap repository not found at $TAP_REPO"
-    echo "Clone it first: git clone https://github.com/mazdak/homebrew-tap.git $TAP_REPO"
+    echo "Clone it first: git clone https://github.com/namor/homebrew-tap.git $TAP_REPO"
     exit 1
 fi
 
@@ -91,5 +91,5 @@ echo ""
 echo "Or run: make publish-brew-cask"
 echo ""
 echo "Users can install/update with:"
-echo "   brew install mazdak/tap/audiowhisper"
+echo "   brew install namor/tap/audiowhisper"
 echo "   brew upgrade audiowhisper"
