@@ -35,12 +35,10 @@ internal class SpeechToTextService {
     private let parakeetService = ParakeetService()
     private let keychainService: KeychainServiceProtocol
     private let correctionService = SemanticCorrectionService()
-    let diarizationService: DiarizationServiceProtocol
-
-    init(keychainService: KeychainServiceProtocol = KeychainService.shared,
-         diarizationService: DiarizationServiceProtocol = DiarizationService()) {
+    private let diarizationService: DiarizationServiceProtocol = DiarizationService()
+    
+    init(keychainService: KeychainServiceProtocol = KeychainService.shared) {
         self.keychainService = keychainService
-        self.diarizationService = diarizationService
     }
     
     // Raw transcription without semantic correction
