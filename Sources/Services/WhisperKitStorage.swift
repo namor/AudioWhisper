@@ -31,7 +31,6 @@ internal enum WhisperKitStorage {
         let exists = fileManager.fileExists(atPath: modelDirectory.path, isDirectory: &isDirectory)
         guard exists, isDirectory.boolValue else { return false }
 
-        // Required top-level files
         let requiredFiles = ["config.json", "generation_config.json"]
         for file in requiredFiles {
             if !fileManager.fileExists(atPath: modelDirectory.appendingPathComponent(file).path) {
@@ -39,7 +38,8 @@ internal enum WhisperKitStorage {
             }
         }
 
-        // Required CoreML bundles (and a sentinel file inside each) to avoid partial-download false positives.
+        // WhisperKit 0.15+ compiles CoreML bundles with coremldata.bin as a sentinel
+        // for each required model component.
         for bundle in requiredCoreMLBundles {
             let bundleURL = modelDirectory.appendingPathComponent(bundle, isDirectory: true)
             var isBundleDir: ObjCBool = false
@@ -54,33 +54,7 @@ internal enum WhisperKitStorage {
             }
         }
 
-        // Tokenizer artifact (location varies by model, so search under `models/`).
-        let modelsDir = modelDirectory.appendingPathComponent("models", isDirectory: true)
-        var isModelsDir: ObjCBool = false
-        guard fileManager.fileExists(atPath: modelsDir.path, isDirectory: &isModelsDir),
-              isModelsDir.boolValue else {
-            return false
-        }
-
-        return containsTokenizerJSON(in: modelsDir, fileManager: fileManager)
-    }
-
-    private static func containsTokenizerJSON(in directory: URL, fileManager: FileManager) -> Bool {
-        guard let enumerator = fileManager.enumerator(
-            at: directory,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        ) else {
-            return false
-        }
-
-        for case let fileURL as URL in enumerator {
-            if fileURL.lastPathComponent == "tokenizer.json" {
-                return true
-            }
-        }
-
-        return false
+        return true
     }
 
     static func localModelPath(for model: WhisperModel, fileManager: FileManager = .default) -> String? {

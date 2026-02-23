@@ -31,10 +31,22 @@ internal final class DiarizationService: DiarizationServiceProtocol, @unchecked 
     private var _manager: OfflineDiarizerManager?
     private var _modelsPrepared = false
 
+    private static func makeDiarizationConfig() -> OfflineDiarizerConfig {
+        OfflineDiarizerConfig(
+            clustering: .init(
+                threshold: 0.4,
+                warmStartFa: 0.07,
+                warmStartFb: 0.8,
+                minSpeakers: 2
+            )
+        )
+    }
+
     func prepareModels() async throws {
         guard Arch.isAppleSilicon else { throw DiarizationError.notAppleSilicon }
         do {
-            let mgr = OfflineDiarizerManager(config: OfflineDiarizerConfig())
+            let config = Self.makeDiarizationConfig()
+            let mgr = OfflineDiarizerManager(config: config)
             try await mgr.prepareModels()
             lock.withLock {
                 _manager = mgr
@@ -61,6 +73,8 @@ internal final class DiarizationService: DiarizationServiceProtocol, @unchecked 
                 throw DiarizationError.diarizationFailed("Manager not initialized")
             }
             let result = try await mgr.process(audioURL)
+            let uniqueSpeakers = Set(result.segments.map { $0.speakerId })
+            logger.info("Diarization complete: \(result.segments.count) segments, \(uniqueSpeakers.count) unique speakers (\(uniqueSpeakers.sorted().joined(separator: ", ")))")
             return result.segments.map { seg in
                 (speakerId: seg.speakerId, start: TimeInterval(seg.startTimeSeconds), end: TimeInterval(seg.endTimeSeconds))
             }
@@ -89,6 +103,7 @@ internal final class DiarizationService: DiarizationServiceProtocol, @unchecked 
         diarSegments: [(speakerId: String, start: TimeInterval, end: TimeInterval)]
     ) -> [SpeakerTurn] {
         guard !asrSegments.isEmpty else { return [] }
+        guard !diarSegments.isEmpty else { return [] }
 
         var speakerMap: [String: String] = [:]
         var speakerCounter = 0
@@ -104,28 +119,41 @@ internal final class DiarizationService: DiarizationServiceProtocol, @unchecked 
         var assigned: [(speakerId: String, text: String, start: Float, end: Float)] = []
 
         for seg in asrSegments {
+            let segStart = Double(seg.start)
+            let segEnd = Double(seg.end)
             var bestSpeaker = ""
-            var bestOverlap: Double = -1
+            var bestOverlap: Double = 0
 
             for diar in diarSegments {
-                let overlapStart = max(Double(seg.start), diar.start)
-                let overlapEnd = min(Double(seg.end), diar.end)
-                let overlap = max(0, overlapEnd - overlapStart)
-                if overlap > bestOverlap || (overlap == bestOverlap && diar.start < (diarSegments.first(where: { $0.speakerId == bestSpeaker })?.start ?? .infinity)) {
+                let overlapStart = max(segStart, diar.start)
+                let overlapEnd = min(segEnd, diar.end)
+                let overlap = overlapEnd - overlapStart
+                guard overlap > 0 else { continue }
+                if overlap > bestOverlap {
                     bestOverlap = overlap
                     bestSpeaker = diar.speakerId
                 }
             }
 
             if bestSpeaker.isEmpty {
-                bestSpeaker = "unknown"
+                let segMid = (segStart + segEnd) / 2.0
+                var bestDistance = Double.infinity
+                for diar in diarSegments {
+                    let diarMid = (diar.start + diar.end) / 2.0
+                    let distance = abs(segMid - diarMid)
+                    if distance < bestDistance {
+                        bestDistance = distance
+                        bestSpeaker = diar.speakerId
+                    }
+                }
             }
+
+            if bestSpeaker.isEmpty { bestSpeaker = "unknown" }
 
             let id = displayId(for: bestSpeaker)
             assigned.append((speakerId: id, text: seg.text, start: seg.start, end: seg.end))
         }
 
-        // Merge contiguous segments with the same speaker
         var turns: [SpeakerTurn] = []
         for item in assigned {
             if let last = turns.last, last.speakerId == item.speakerId {

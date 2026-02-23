@@ -3,14 +3,12 @@ import os.log
 
 internal extension AppDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Skip UI initialization in test environment
         let isTestEnvironment = NSClassFromString("XCTestCase") != nil
         if isTestEnvironment {
             Logger.app.info("Test environment detected - skipping UI initialization")
             return
         }
 
-        // Ensure a single, consistent set of defaults before any UI/services read from UserDefaults/AppStorage.
         AppDefaults.register()
 
         do {
@@ -18,7 +16,6 @@ internal extension AppDelegate {
             Logger.app.info("DataManager initialized successfully")
         } catch {
             Logger.app.error("Failed to initialize DataManager: \(error.localizedDescription)")
-            // App continues with in-memory fallback
         }
 
         Task { await UsageMetricsStore.shared.bootstrapIfNeeded() }
@@ -53,12 +50,21 @@ internal extension AppDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             if AppSetupHelper.checkFirstRun() {
                 self.showWelcomeAndSettings()
+            } else {
+                DashboardWindowManager.shared.showDashboardWindow()
             }
         }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        false // Keep app running in menu bar
+        false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            DashboardWindowManager.shared.showDashboardWindow()
+        }
+        return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {

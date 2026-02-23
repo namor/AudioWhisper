@@ -11,7 +11,7 @@ let package = Package(
         .package(url: "https://github.com/Alamofire/Alamofire.git", from: "5.10.2"),
         .package(url: "https://github.com/soffes/HotKey", from: "0.2.1"),
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.15.0"),
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.7.9")
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.12.1")
     ],
     targets: [
         .executableTarget(

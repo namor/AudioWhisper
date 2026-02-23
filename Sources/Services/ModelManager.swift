@@ -4,6 +4,8 @@ import UserNotifications
 import os.log
 import Observation
 
+private let modelManagerLog = Logger(subsystem: "com.audiowhisper.app", category: "ModelManager")
+
 @Observable
 @MainActor
 internal class ModelManager {
@@ -73,7 +75,8 @@ internal class ModelManager {
     }
     
     nonisolated func downloadModel(_ model: WhisperModel) async throws {
-        // Check if already downloading and mark as downloading
+        modelManagerLog.info("downloadModel called for \(model.rawValue)")
+        
         let alreadyDownloading = await MainActor.run {
             if ModelManager.shared.downloadingModels.contains(model) {
                 return true
@@ -84,6 +87,7 @@ internal class ModelManager {
         }
         
         if alreadyDownloading {
+            modelManagerLog.info("Model \(model.rawValue) already downloading, skipping")
             throw ModelError.alreadyDownloading
         }
         
@@ -288,13 +292,15 @@ internal class ModelManager {
         var newDownloadedModels: Set<WhisperModel> = []
         
         for model in WhisperModel.allCases {
-            if await isModelDownloaded(model) {
+            let onDisk = await isModelDownloaded(model)
+            modelManagerLog.info("refreshDownloadedModels: \(model.rawValue) onDisk=\(onDisk)")
+            if onDisk {
                 newDownloadedModels.insert(model)
             }
         }
         
-        // Only update if there are changes to avoid unnecessary UI updates
         if newDownloadedModels != downloadedModels {
+            modelManagerLog.info("Downloaded models changed: \(newDownloadedModels.map(\.rawValue).joined(separator: ", "))")
             downloadedModels = newDownloadedModels
             lastRefresh = Date()
         }
