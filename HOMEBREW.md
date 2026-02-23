@@ -8,7 +8,7 @@ This guide explains how to maintain and use the AudioWhisper Homebrew tap.
 
 ```bash
 # Add the tap
-brew tap mazdak/tap
+brew tap namor/tap
 
 # Install AudioWhisper
 brew install audiowhisper
@@ -32,14 +32,14 @@ brew upgrade audiowhisper
 brew uninstall audiowhisper
 
 # Remove the tap (optional)
-brew untap mazdak/tap
+brew untap namor/tap
 ```
 
 ## For Maintainers
 
 ### Repository Structure
 
-The tap repository at `mazdak/homebrew-tap` is organized as:
+The tap repository at `namor/homebrew-tap` is organized as:
 
 ```
 homebrew-tap/
@@ -77,7 +77,7 @@ If you prefer to update manually:
 
 ```bash
 # Download the latest release
-RELEASE_URL="https://github.com/mazdak/AudioWhisper/releases/download/v1.5.0/AudioWhisper.zip"
+RELEASE_URL="https://github.com/namor/AudioWhisper/releases/download/v1.5.0/AudioWhisper.zip"
 curl -L -o AudioWhisper.zip "$RELEASE_URL"
 
 # Calculate SHA256
@@ -138,7 +138,7 @@ make release            # Create a new GitHub release
 - **homebrew-tap repository**: Must be cloned as a sibling directory
   ```bash
   cd /path/to/Code
-  git clone https://github.com/mazdak/homebrew-tap.git
+  git clone https://github.com/namor/homebrew-tap.git
   ```
 
 ## Troubleshooting
@@ -155,7 +155,7 @@ If users see checksum errors:
 
 Users need to tap the repository first:
 ```bash
-brew tap mazdak/tap
+brew tap namor/tap
 ```
 
 ### "homebrew-tap repository not found"
@@ -163,7 +163,7 @@ brew tap mazdak/tap
 Clone the tap repository as a sibling directory:
 ```bash
 cd ..
-git clone https://github.com/mazdak/homebrew-tap.git
+git clone https://github.com/namor/homebrew-tap.git
 ```
 
 ## Best Practices

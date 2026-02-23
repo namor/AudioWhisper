@@ -50,7 +50,7 @@ publish-brew-cask: update-brew-cask
 		echo "✅ Published to homebrew-tap"; \
 	else \
 		echo "❌ Error: homebrew-tap repository not found at ../homebrew-tap"; \
-		echo "Please clone it first: git clone https://github.com/mazdak/homebrew-tap.git ../homebrew-tap"; \
+		echo "Please clone it first: git clone https://github.com/namor/homebrew-tap.git ../homebrew-tap"; \
 		exit 1; \
 	fi
 
