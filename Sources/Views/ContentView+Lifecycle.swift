@@ -14,6 +14,7 @@ internal extension ContentView {
     }
     
     func handleOnDisappear() {
+        liveTranscriptionService.stop()
         removeNotificationObservers()
         processingTask?.cancel()
         processingTask = nil
@@ -62,6 +63,7 @@ internal extension ContentView {
         ) { _ in
             Task { @MainActor in
                 if audioRecorder.isRecording {
+                    liveTranscriptionService.stop()
                     audioRecorder.cancelRecording()
                     isProcessing = false
                 } else if isProcessing {

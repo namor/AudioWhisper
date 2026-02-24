@@ -1,33 +1,29 @@
 import SwiftUI
 
-/// Scrolling overlay that shows live transcription text during recording.
+/// Semi-transparent frosted-glass overlay showing the last 2 lines of live
+/// transcription text, rolling upward as new words arrive.
 internal struct LiveTranscriptOverlay: View {
     let text: String
 
-    @Namespace private var bottomAnchor
-
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                Text(text)
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                    .foregroundStyle(Color(nsColor: .labelColor))
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .id("liveTextBottom")
-            }
-            .frame(maxHeight: 100)
+        Text(text)
+            .font(.system(size: 11.5, weight: .medium, design: .rounded))
+            .foregroundStyle(.primary.opacity(0.85))
+            .lineLimit(2)
+            .truncationMode(.head)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color(nsColor: .textBackgroundColor).opacity(0.5))
+                .ultraThinMaterial,
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
-            .onChange(of: text) { _, _ in
-                withAnimation(.easeOut(duration: 0.15)) {
-                    proxy.scrollTo("liveTextBottom", anchor: .bottom)
-                }
-            }
-        }
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+            )
+            .contentTransition(.numericText(countsDown: false))
+            .animation(.easeOut(duration: 0.15), value: text)
     }
 }

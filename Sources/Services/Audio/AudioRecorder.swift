@@ -105,7 +105,9 @@ internal class AudioRecorder: NSObject, ObservableObject {
 
             let (stream, continuation) = AsyncStream<AudioData>.makeStream(bufferingPolicy: .unbounded)
             audioDataStream = stream
+            fileLock.lock()
             audioDataContinuation = continuation
+            fileLock.unlock()
 
             engine.installTap(bufferSize: 4096, format: inputFormat) { [weak self] buffer, time in
                 guard let self else { return }
@@ -184,13 +186,18 @@ internal class AudioRecorder: NSObject, ObservableObject {
     private nonisolated func handleCapturedBuffer(_ buffer: AVAudioPCMBuffer, time: AVAudioTime) {
         fileLock.lock()
         let file = audioFile
+        let continuation = audioDataContinuation
         fileLock.unlock()
 
         if let file {
-            do { try file.write(from: buffer) } catch {}
+            do {
+                try file.write(from: buffer)
+            } catch {
+                Logger.audioRecorder.error("Buffer write failed: \(error.localizedDescription)")
+            }
         }
 
-        audioDataContinuation?.yield(AudioData(buffer: buffer, time: time))
+        continuation?.yield(AudioData(buffer: buffer, time: time))
 
         let level = Self.computeRMSLevel(buffer)
         Task { @MainActor [weak self] in
@@ -223,12 +230,13 @@ internal class AudioRecorder: NSObject, ObservableObject {
         captureEngine?.stop()
         captureEngine = nil
 
-        audioDataContinuation?.finish()
-        audioDataContinuation = nil
-        audioDataStream = nil
-
         fileLock.lock()
+        let continuation = audioDataContinuation
+        audioDataContinuation = nil
         audioFile = nil
         fileLock.unlock()
+
+        continuation?.finish()
+        audioDataStream = nil
     }
 }
