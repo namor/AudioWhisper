@@ -19,6 +19,11 @@ internal class AudioRecorder: NSObject, ObservableObject {
 
     private(set) var audioDataStream: AsyncStream<AudioData>?
 
+    /// Set when the audio hardware config changes mid-recording.
+    @Published var deviceDisconnected = false
+
+    private var configChangeObserver: Any?
+
     // Accessed from the real-time audio tap thread; protected by fileLock.
     nonisolated(unsafe) private var audioFile: AVAudioFile?
     nonisolated(unsafe) private var audioDataContinuation: AsyncStream<AudioData>.Continuation?
@@ -91,10 +96,16 @@ internal class AudioRecorder: NSObject, ObservableObject {
         let timestamp = dateProvider().timeIntervalSince1970
         let audioFilename = tempPath.appendingPathComponent("recording_\(timestamp).wav")
         recordingURL = audioFilename
+        deviceDisconnected = false
 
         do {
             let engine = engineFactory()
             captureEngine = engine
+
+            let selectedMic = UserDefaults.standard.string(forKey: "selectedMicrophone") ?? ""
+            if !selectedMic.isEmpty {
+                try? engine.setInputDevice(uniqueID: selectedMic)
+            }
 
             let inputFormat = engine.inputFormat
 
@@ -115,7 +126,9 @@ internal class AudioRecorder: NSObject, ObservableObject {
             }
 
             engine.prepare()
-            try engine.start()
+            try startEngineWithRetry(engine)
+
+            observeConfigurationChanges(engine)
 
             currentSessionStart = dateProvider()
             lastRecordingDuration = nil
@@ -129,6 +142,17 @@ internal class AudioRecorder: NSObject, ObservableObject {
             }
             checkMicrophonePermission()
             return false
+        }
+    }
+
+    /// Attempt engine start with a single retry for transient failures.
+    private func startEngineWithRetry(_ engine: AudioCaptureEngine) throws {
+        do {
+            try engine.start()
+        } catch {
+            Logger.audioRecorder.warning("Engine start failed, retrying: \(error.localizedDescription)")
+            Thread.sleep(forTimeInterval: 0.2)
+            try engine.start()
         }
     }
 
@@ -223,9 +247,50 @@ internal class AudioRecorder: NSObject, ObservableObject {
         return (clamped - minDb) / (0 - minDb)
     }
 
+    // MARK: - Configuration Change Handling
+
+    private func observeConfigurationChanges(_ engine: AudioCaptureEngine) {
+        configChangeObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleConfigurationChange()
+            }
+        }
+    }
+
+    private func handleConfigurationChange() {
+        guard isRecording, let engine = captureEngine else { return }
+        Logger.audioRecorder.warning("Audio hardware configuration changed mid-recording")
+
+        engine.removeTap()
+        engine.stop()
+
+        do {
+            let inputFormat = engine.inputFormat
+            engine.installTap(bufferSize: 4096, format: inputFormat) { [weak self] buffer, time in
+                guard let self else { return }
+                self.handleCapturedBuffer(buffer, time: time)
+            }
+            engine.prepare()
+            try engine.start()
+            Logger.audioRecorder.info("Engine restarted after configuration change")
+        } catch {
+            Logger.audioRecorder.error("Engine restart failed after config change: \(error.localizedDescription)")
+            deviceDisconnected = true
+        }
+    }
+
     // MARK: - Teardown
 
     private func tearDownEngine() {
+        if let observer = configChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            configChangeObserver = nil
+        }
+
         captureEngine?.removeTap()
         captureEngine?.stop()
         captureEngine = nil

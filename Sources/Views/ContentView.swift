@@ -14,7 +14,7 @@ internal struct ContentView: View {
     @State var statusViewModel = StatusViewModel()
     @State var permissionManager = PermissionManager()
     @StateObject var soundManager = SoundManager()
-    let semanticCorrectionService = SemanticCorrectionService()
+    let pipeline: TranscriptionPipeline
     @State var isProcessing = false
     @State var progressMessage = "Processing..."
     @State var transcriptionStartTime: Date?
@@ -44,6 +44,7 @@ internal struct ContentView: View {
     init(speechService: SpeechToTextService = SpeechToTextService(), audioRecorder: AudioRecorder) {
         self._speechService = State(initialValue: speechService)
         self.audioRecorder = audioRecorder
+        self.pipeline = TranscriptionPipeline(speechService: speechService)
     }
     
     private func showErrorAlert() {

@@ -152,6 +152,52 @@ final class AudioRecorderTests: XCTestCase {
         XCTAssertNil(recorder.audioDataStream)
     }
 
+    func testDeviceDisconnectedIsFalseOnStart() {
+        let mockEngine = MockAudioCaptureEngine()
+        let recorder = makeRecorder(dates: [Date(), Date()], engine: mockEngine)
+        recorder.hasPermission = true
+
+        XCTAssertTrue(recorder.startRecording())
+        XCTAssertFalse(recorder.deviceDisconnected)
+    }
+
+    func testSelectedMicrophoneIsApplied() {
+        let mockEngine = MockAudioCaptureEngine()
+        let recorder = makeRecorder(dates: [Date(), Date()], engine: mockEngine)
+        recorder.hasPermission = true
+
+        UserDefaults.standard.set("test-mic-uid", forKey: "selectedMicrophone")
+        XCTAssertTrue(recorder.startRecording())
+        XCTAssertEqual(mockEngine.lastSetDeviceUID, "test-mic-uid")
+
+        UserDefaults.standard.removeObject(forKey: "selectedMicrophone")
+    }
+
+    func testEmptyMicrophoneDoesNotCallSetDevice() {
+        let mockEngine = MockAudioCaptureEngine()
+        let recorder = makeRecorder(dates: [Date(), Date()], engine: mockEngine)
+        recorder.hasPermission = true
+
+        UserDefaults.standard.set("", forKey: "selectedMicrophone")
+        XCTAssertTrue(recorder.startRecording())
+        XCTAssertNil(mockEngine.lastSetDeviceUID)
+
+        UserDefaults.standard.removeObject(forKey: "selectedMicrophone")
+    }
+
+    func testStartRecordingSucceedsWhenDeviceNotFound() {
+        let mockEngine = MockAudioCaptureEngine()
+        mockEngine.shouldThrowOnSetDevice = true
+        let recorder = makeRecorder(dates: [Date(), Date()], engine: mockEngine)
+        recorder.hasPermission = true
+
+        UserDefaults.standard.set("nonexistent-uid", forKey: "selectedMicrophone")
+        let success = recorder.startRecording()
+        XCTAssertTrue(success, "Should still start with default device when selected device not found")
+
+        UserDefaults.standard.removeObject(forKey: "selectedMicrophone")
+    }
+
     func testComputeRMSLevelWithSilence() {
         guard let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1),
               let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1024) else {

@@ -11,9 +11,18 @@ final class MockAudioCaptureEngine: AudioCaptureEngine {
     private(set) var startCalled = false
     private(set) var stopCalled = false
     private(set) var tapRemoved = false
+    private(set) var lastSetDeviceUID: String?
 
     var shouldThrowOnStart = false
+    var shouldThrowOnSetDevice = false
     var tapBlock: (@Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void)?
+
+    func setInputDevice(uniqueID: String) throws {
+        if shouldThrowOnSetDevice {
+            throw AudioCaptureError.deviceNotFound(uniqueID)
+        }
+        lastSetDeviceUID = uniqueID
+    }
 
     func installTap(
         bufferSize: AVAudioFrameCount,
