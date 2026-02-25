@@ -26,10 +26,10 @@ internal extension ContentView {
     }
     
     func stopAndProcess() {
-        liveTranscriptionService.stop()
         processingTask?.cancel()
         NotificationCenter.default.post(name: .recordingStopped, object: nil)
-        
+
+        let liveWasActive = liveTranscriptionService.isActive
         let shouldHintThisRun = !hasShownFirstModelUseHint && isLocalModelInvocationPlanned()
         if shouldHintThisRun { showFirstModelUseHint = true }
 
@@ -37,20 +37,42 @@ internal extension ContentView {
             isProcessing = true
             transcriptionStartTime = Date()
             progressMessage = "Preparing audio..."
-            
+
             do {
                 try Task.checkCancellation()
                 guard let audioURL = audioRecorder.stopRecording() else {
+                    liveTranscriptionService.stop()
                     throw NSError(domain: "AudioRecorder", code: 1, userInfo: [NSLocalizedDescriptionKey: LocalizedStrings.Errors.failedToGetRecordingURL])
                 }
                 let sessionDuration = audioRecorder.lastRecordingDuration
-                
+
                 guard !audioURL.path.isEmpty else {
+                    liveTranscriptionService.stop()
                     throw NSError(domain: "AudioRecorder", code: 2, userInfo: [NSLocalizedDescriptionKey: LocalizedStrings.Errors.recordingURLEmpty])
                 }
-                
+
                 lastAudioURL = audioURL
                 try Task.checkCancellation()
+
+                if liveWasActive {
+                    progressMessage = "Finalizing transcription..."
+                    let liveResult = await liveTranscriptionService.finalize()
+
+                    if !liveResult.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        let result = try await buildFastPathResult(
+                            liveResult: liveResult, audioURL: audioURL
+                        )
+                        let finalText = try await correctAndCommit(
+                            result: result, duration: sessionDuration
+                        )
+                        transcriptionStartTime = nil
+                        showConfirmationAndPaste(text: finalText)
+                        dismissHintIfNeeded(shouldHintThisRun)
+                        return
+                    }
+                } else {
+                    liveTranscriptionService.stop()
+                }
 
                 try await ensureModelReadyIfLocal()
                 let result = try await transcribeWithPipeline(audioURL: audioURL)
@@ -70,6 +92,35 @@ internal extension ContentView {
                 handleTranscriptionError(error)
                 dismissHintIfNeeded(shouldHintThisRun)
             }
+        }
+    }
+
+    /// Fast path: reuse live transcription text, optionally run offline
+    /// diarization on the WAV and align using segment timings.
+    private func buildFastPathResult(
+        liveResult: LiveTranscriptionResult,
+        audioURL: URL
+    ) async throws -> TranscriptionResult {
+        let diarizationEnabled = UserDefaults.standard.bool(
+            forKey: AppDefaults.Keys.diarizationEnabled
+        )
+        guard diarizationEnabled, !liveResult.segments.isEmpty else {
+            return TranscriptionResult(text: liveResult.text, speakerTurns: nil)
+        }
+
+        progressMessage = "Detecting speakers..."
+        do {
+            let diarSegments = try await pipeline.speechService.diarizationService
+                .diarize(audioURL: audioURL)
+            let turns = DiarizationService.align(
+                asrSegments: liveResult.segments, diarSegments: diarSegments
+            )
+            return TranscriptionResult(
+                text: liveResult.text, speakerTurns: turns.isEmpty ? nil : turns
+            )
+        } catch {
+            Logger.app.warning("Post-recording diarization failed, returning flat text: \(error.localizedDescription)")
+            return TranscriptionResult(text: liveResult.text, speakerTurns: nil)
         }
     }
 

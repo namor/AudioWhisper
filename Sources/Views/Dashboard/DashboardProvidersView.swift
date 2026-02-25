@@ -53,6 +53,7 @@ internal struct DashboardProvidersView: View {
     @State private var showMLXModelsSheet = false
 
     @State var modelManager = ModelManager.shared
+    @State var fluidAudioModelManager = FluidAudioModelManager.shared
     let keychainService: KeychainServiceProtocol = KeychainService.shared
 
     var body: some View {

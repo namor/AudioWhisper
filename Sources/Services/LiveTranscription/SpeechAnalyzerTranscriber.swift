@@ -65,6 +65,13 @@ internal final class SpeechAnalyzerTranscriber: LiveTranscriptionBackend, @unche
         return updateStream
     }
 
+    func finalize() async {
+        inputContinuation?.finish()
+        analyzer?.finalizeAndFinishThroughEndOfInput()
+        await processingTask?.value
+        processingTask = nil
+    }
+
     func finish() async {
         inputContinuation?.finish()
         analyzer?.finalizeAndFinishThroughEndOfInput()

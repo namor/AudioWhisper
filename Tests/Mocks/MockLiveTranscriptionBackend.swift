@@ -3,6 +3,7 @@ import Foundation
 
 final class MockLiveTranscriptionBackend: LiveTranscriptionBackend, @unchecked Sendable {
     var startCalled = false
+    var finalizeCalled = false
     var finishCalled = false
 
     /// Updates to yield when `start` is called.
@@ -17,6 +18,10 @@ final class MockLiveTranscriptionBackend: LiveTranscriptionBackend, @unchecked S
             }
             continuation.finish()
         }
+    }
+
+    func finalize() async {
+        finalizeCalled = true
     }
 
     func finish() async {

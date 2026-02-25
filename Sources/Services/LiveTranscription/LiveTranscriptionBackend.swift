@@ -1,16 +1,46 @@
 import Foundation
 import AVFoundation
 
+/// A timed segment of transcribed text with absolute audio-timeline bounds.
+internal struct SegmentTiming: Sendable {
+    let text: String
+    let start: TimeInterval
+    let end: TimeInterval
+}
+
+/// Aggregated output returned when live transcription is gracefully drained.
+internal struct LiveTranscriptionResult: Sendable {
+    let text: String
+    let segments: [(text: String, start: Float, end: Float)]
+
+    static let empty = LiveTranscriptionResult(text: "", segments: [])
+}
+
 /// Transcription update emitted by a live transcription backend.
 internal struct LiveTranscriptionUpdate: Sendable {
     let finalizedText: String?
     let volatileText: String?
+    let segmentTiming: SegmentTiming?
+
+    init(finalizedText: String?, volatileText: String?, segmentTiming: SegmentTiming? = nil) {
+        self.finalizedText = finalizedText
+        self.volatileText = volatileText
+        self.segmentTiming = segmentTiming
+    }
 }
 
 /// Backend that processes an audio stream and produces live transcription updates.
 internal protocol LiveTranscriptionBackend: AnyObject, Sendable {
     func start(audioStream: AsyncStream<AudioData>) -> AsyncStream<LiveTranscriptionUpdate>
+    /// Gracefully drain remaining audio through the ASR pipeline.
+    /// Called after the audio stream has ended (stopRecording).
+    func finalize() async
+    /// Hard cancel — discards remaining audio.
     func finish() async
+}
+
+extension LiveTranscriptionBackend {
+    func finalize() async { await finish() }
 }
 
 /// User-facing live transcription engine selection.

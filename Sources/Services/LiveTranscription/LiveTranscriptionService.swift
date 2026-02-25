@@ -12,6 +12,7 @@ internal class LiveTranscriptionService: ObservableObject {
 
     private var backend: (any LiveTranscriptionBackend)?
     private var updateTask: Task<Void, Never>?
+    private var accumulatedSegments: [(text: String, start: Float, end: Float)] = []
 
     func start(
         audioStream: AsyncStream<AudioData>,
@@ -23,6 +24,7 @@ internal class LiveTranscriptionService: ObservableObject {
 
         finalizedTranscript = ""
         volatileTranscript = ""
+        accumulatedSegments = []
         isActive = true
 
         let selectedBackend = Self.makeBackend(provider: provider)
@@ -39,6 +41,12 @@ internal class LiveTranscriptionService: ObservableObject {
                     }
                     self.finalizedTranscript += finalized
                     self.volatileTranscript = ""
+
+                    if let t = update.segmentTiming {
+                        self.accumulatedSegments.append(
+                            (text: t.text, start: Float(t.start), end: Float(t.end))
+                        )
+                    }
                 }
                 if let volatile = update.volatileText {
                     self.volatileTranscript = volatile
@@ -47,6 +55,26 @@ internal class LiveTranscriptionService: ObservableObject {
             guard let self else { return }
             self.isActive = false
         }
+    }
+
+    /// Gracefully drain the live transcription pipeline after the audio stream
+    /// has ended (i.e. after `audioRecorder.stopRecording()`).
+    /// Returns the accumulated transcript and segment timings for diarization alignment.
+    func finalize() async -> LiveTranscriptionResult {
+        guard isActive, backend != nil else {
+            return LiveTranscriptionResult(text: currentTranscript, segments: accumulatedSegments)
+        }
+
+        await updateTask?.value
+        updateTask = nil
+
+        if let backend {
+            await backend.finalize()
+        }
+        backend = nil
+        isActive = false
+
+        return LiveTranscriptionResult(text: currentTranscript, segments: accumulatedSegments)
     }
 
     func stop() {
@@ -58,6 +86,7 @@ internal class LiveTranscriptionService: ObservableObject {
         }
         backend = nil
         isActive = false
+        accumulatedSegments = []
     }
 
     var currentTranscript: String {
