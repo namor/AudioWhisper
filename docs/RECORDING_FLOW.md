@@ -211,7 +211,45 @@ handleCapturedBuffer(buffer, time)    ← real-time audio thread
     └─► audioLevel (RMS)                 → WaveformRecordingView bars
 ```
 
-### Post-Recording Phase (TranscriptionPipeline)
+### Post-Recording Phase
+
+Two paths exist depending on whether live transcription was active:
+
+#### Fast Path (live transcription active)
+
+When FluidAudio or Apple Speech was streaming during recording, the pipeline
+reuses the accumulated transcript and segment timings instead of re-transcribing:
+
+```
+audioRecorder.stopRecording()
+    │   ends AsyncStream<AudioData>
+    ▼
+LiveTranscriptionService.finalize()
+    │   waits for update consumer to drain naturally
+    │   (backend processes remaining audio via asr.finish())
+    ▼
+LiveTranscriptionResult
+    │   .text = accumulated confirmed + volatile transcript
+    │   .segments = [(text, start, end)] from TokenTimings
+    │
+    ├─ diarization enabled?
+    │   ├─ YES → DiarizationService.diarize(audioURL)    (offline, ~1-2s)
+    │   │            │
+    │   │            ▼
+    │   │        DiarizationService.align(asrSegments, diarSegments)
+    │   │            │
+    │   │            ▼
+    │   │        [SpeakerTurn]
+    │   └─ NO  → speakerTurns = nil
+    │
+    ▼
+SemanticCorrectionService.correctWithWarning()
+    │
+    ▼
+Final text → pasteboard / history / SmartPaste
+```
+
+#### Standard Path (no live transcription, external file, or retry)
 
 ```
 WAV file URL
@@ -279,8 +317,10 @@ Final text
    return to `@MainActor` via `MainActor.run` for UI updates.
 
 4. **FluidAudio streaming** spawns two internal tasks (`feedTask` for audio
-   consumption, `updateTask` for transcription updates). Both are cancelled in
-   `finish()`.
+   consumption, `updateTask` for transcription updates). `finish()` hard-cancels
+   both. `finalize()` waits for feedTask to complete naturally (the audio stream
+   ending triggers `asr.finish()` which processes remaining buffered audio),
+   then cancels the hanging internal updateTask.
 
 ---
 
@@ -377,3 +417,20 @@ The `TranscriptionPipeline` class centralizes the three phases shared across
 The callers in `ContentView+Recording` handle UI state (`isProcessing`,
 `progressMessage`), model downloads, live transcription start/stop, and error
 presentation. This separation keeps the pipeline testable without UI dependencies.
+
+### Fast Path Decision (`stopAndProcess`)
+
+When `liveTranscriptionService.isActive` is true at the time of stop:
+
+1. `audioRecorder.stopRecording()` ends the audio stream
+2. `liveTranscriptionService.finalize()` awaits the natural drain — the backend
+   processes remaining buffered audio, yields final updates, finishes the output
+   stream, and the update consumer accumulates the last text/timings
+3. If the result has non-empty text, the fast path skips STT entirely
+4. If diarization is enabled and segment timings are available, offline
+   diarization runs on the WAV file and `DiarizationService.align()` uses the
+   segment timings for speaker attribution
+5. Correction and commit proceed normally
+
+Falls back to the standard pipeline if live transcription was off, failed, or
+produced empty text.
