@@ -59,17 +59,17 @@ internal final class FluidAudioStreamingTranscriber: LiveTranscriptionBackend, @
                     await asr.streamAudio(audioData.buffer)
                 }
 
-                let finalText = try await asr.finish()
-                if !finalText.isEmpty {
-                    outputContinuation.yield(
-                        LiveTranscriptionUpdate(finalizedText: finalText, volatileText: nil)
-                    )
-                }
+                // Process remaining buffered audio and wait for the
+                // recognizerTask to flush all windows (which yields updates
+                // through updateContinuation → updateTask → outputContinuation).
+                let _ = try await asr.finish()
+                // Close the ASR update stream so updateTask exits its loop
+                // and becomes the sole closer of outputContinuation.
+                await asr.cancel()
             } catch {
                 Logger.app.error("FluidAudioStreamingTranscriber error: \(error.localizedDescription)")
+                outputContinuation.finish()
             }
-
-            outputContinuation.finish()
         }
 
         return outputStream
@@ -77,7 +77,8 @@ internal final class FluidAudioStreamingTranscriber: LiveTranscriptionBackend, @
 
     func finalize() async {
         await feedTask?.value
-        updateTask?.cancel()
+        if let asr = streamingAsr { await asr.cancel() }
+        await updateTask?.value
         if let asr = streamingAsr { try? await asr.reset() }
         streamingAsr = nil
         feedTask = nil
@@ -88,7 +89,7 @@ internal final class FluidAudioStreamingTranscriber: LiveTranscriptionBackend, @
         feedTask?.cancel()
         updateTask?.cancel()
         if let asr = streamingAsr {
-            let _ = try? await asr.finish()
+            await asr.cancel()
             try? await asr.reset()
         }
         streamingAsr = nil
