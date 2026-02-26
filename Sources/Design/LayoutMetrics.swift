@@ -4,6 +4,7 @@ import CoreGraphics
 internal enum LayoutMetrics {
     enum RecordingWindow {
         static let size = CGSize(width: 280, height: 220)
+        static let expandedHeight: CGFloat = 280
         static let cornerRadius: CGFloat = 12
     }
     

@@ -18,6 +18,9 @@ internal extension ContentView {
         lastAudioURL = nil
         
         let success = audioRecorder.startRecording()
+        if success, liveTranscriptionProvider != .off, let stream = audioRecorder.audioDataStream {
+            liveTranscriptionService.start(audioStream: stream, provider: liveTranscriptionProvider)
+        }
         if !success {
             errorMessage = LocalizedStrings.Errors.failedToStartRecording
             showError = true
@@ -25,6 +28,7 @@ internal extension ContentView {
     }
     
     func stopAndProcess() {
+        liveTranscriptionService.stop()
         processingTask?.cancel()
         NotificationCenter.default.post(name: .recordingStopped, object: nil)
         

@@ -33,6 +33,8 @@ internal enum AppDefaults {
 
         static let diarizationEnabled = "diarizationEnabled"
 
+        static let liveTranscriptionProvider = "liveTranscriptionProvider"
+
         static let hasSetupLocalLLM = "hasSetupLocalLLM"
         static let hasSetupParakeet = "hasSetupParakeet"
     }
@@ -46,6 +48,7 @@ internal enum AppDefaults {
     internal static let defaultParakeetModel: ParakeetModel = .v3Multilingual
     internal static let defaultSemanticCorrectionMode: SemanticCorrectionMode = .off
     internal static let defaultSemanticCorrectionModelRepo: String = "mlx-community/Qwen3-1.7B-4bit"
+    internal static let defaultLiveTranscriptionProvider: LiveTranscriptionProvider = .off
 
     internal static func register() {
         UserDefaults.standard.register(defaults: [
@@ -73,6 +76,7 @@ internal enum AppDefaults {
             Keys.lastWelcomeVersion: "0",
 
             Keys.diarizationEnabled: false,
+            Keys.liveTranscriptionProvider: defaultLiveTranscriptionProvider.rawValue,
             Keys.hasSetupLocalLLM: false,
             Keys.hasSetupParakeet: false
         ])
