@@ -409,6 +409,13 @@ internal class SpeechToTextService {
     static func cleanTranscriptionText(_ text: String) -> String {
         var cleanedText = text
         
+        // Remove special model tags like <|startoftranscript|>, <|en|>, <|transcribe|>, <|11.58|>, <|endoftext|>
+        cleanedText = cleanedText.replacingOccurrences(
+            of: "<\\|[^>]+\\|>",
+            with: "",
+            options: .regularExpression
+        )
+        
         // Remove bracketed markers iteratively to handle nested cases
         var previousLength = 0
         while cleanedText.count != previousLength {

@@ -35,8 +35,12 @@ internal struct DashboardProvidersView: View {
     @State var modelDownloadStates: [WhisperModel: Bool] = [:]
     @State var downloadStartTime: [WhisperModel: Date] = [:]
     
+    // Live transcription settings
+    @AppStorage(AppDefaults.Keys.liveTranscriptionProvider) var liveTranscriptionProvider = AppDefaults.defaultLiveTranscriptionProvider
+
     // Diarization settings
     @AppStorage(AppDefaults.Keys.diarizationEnabled) var diarizationEnabled = false
+    @AppStorage(AppDefaults.Keys.diarizationSpeakerCount) var diarizationSpeakerCount = 0
     @State var isDiarizationPreparing = false
     @State var isDiarizationReady = false
     @State var diarizationStatusMessage: String?
@@ -50,6 +54,7 @@ internal struct DashboardProvidersView: View {
     @State private var showMLXModelsSheet = false
 
     @State var modelManager = ModelManager.shared
+    @State var fluidAudioModelManager = FluidAudioModelManager.shared
     let keychainService: KeychainServiceProtocol = KeychainService.shared
 
     var body: some View {
@@ -86,6 +91,14 @@ internal struct DashboardProvidersView: View {
                 Text("Semantic Correction")
             } footer: {
                 Text("Clean up grammar, punctuation, and filler words after transcription.")
+            }
+
+            Section {
+                liveTranscriptionSection
+            } header: {
+                Text("Live Transcription")
+            } footer: {
+                Text("Stream text while recording. Model downloads on first use.")
             }
 
             Section {

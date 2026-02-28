@@ -3,7 +3,9 @@ import AVFoundation
 
 internal struct ContentView: View {
     @ObservedObject var audioRecorder: AudioRecorder
+    @StateObject var liveTranscriptionService = LiveTranscriptionService()
     @AppStorage(AppDefaults.Keys.transcriptionProvider) var transcriptionProvider = AppDefaults.defaultTranscriptionProvider
+    @AppStorage(AppDefaults.Keys.liveTranscriptionProvider) var liveTranscriptionProvider = AppDefaults.defaultLiveTranscriptionProvider
     @AppStorage(AppDefaults.Keys.selectedWhisperModel) var selectedWhisperModel = AppDefaults.defaultWhisperModel
     @AppStorage(AppDefaults.Keys.immediateRecording) var immediateRecording = false
     @State var modelManager = ModelManager.shared
@@ -12,7 +14,7 @@ internal struct ContentView: View {
     @State var statusViewModel = StatusViewModel()
     @State var permissionManager = PermissionManager()
     @StateObject var soundManager = SoundManager()
-    let semanticCorrectionService = SemanticCorrectionService()
+    let pipeline: TranscriptionPipeline
     @State var isProcessing = false
     @State var progressMessage = "Processing..."
     @State var transcriptionStartTime: Date?
@@ -42,6 +44,7 @@ internal struct ContentView: View {
     init(speechService: SpeechToTextService = SpeechToTextService(), audioRecorder: AudioRecorder) {
         self._speechService = State(initialValue: speechService)
         self.audioRecorder = audioRecorder
+        self.pipeline = TranscriptionPipeline(speechService: speechService)
     }
     
     private func showErrorAlert() {
@@ -53,6 +56,7 @@ internal struct ContentView: View {
         WaveformRecordingView(
             status: statusViewModel.currentStatus,
             audioLevel: audioRecorder.audioLevel,
+            liveTranscript: liveTranscriptionService.currentTranscript,
             onTap: {
                 if audioRecorder.isRecording {
                     stopAndProcess()

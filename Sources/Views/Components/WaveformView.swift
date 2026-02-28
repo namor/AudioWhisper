@@ -5,7 +5,12 @@ import AppKit
 internal struct WaveformRecordingView: View {
     let status: AppStatus
     let audioLevel: Float
+    var liveTranscript: String = ""
     let onTap: () -> Void
+
+    private var showLiveTranscript: Bool {
+        isRecording && !liveTranscript.isEmpty
+    }
 
     var body: some View {
         ZStack {
@@ -20,6 +25,11 @@ internal struct WaveformRecordingView: View {
                     RecordingWaveformView(level: clampedAudioLevel)
                         .frame(height: 28)
                         .padding(.top, 4)
+                }
+
+                if showLiveTranscript {
+                    LiveTranscriptOverlay(text: liveTranscript)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
 
                 Button(action: onTap) {
@@ -37,7 +47,10 @@ internal struct WaveformRecordingView: View {
             .padding(16)
         }
         .frame(width: LayoutMetrics.RecordingWindow.size.width,
-               height: LayoutMetrics.RecordingWindow.size.height)
+               height: showLiveTranscript
+                   ? LayoutMetrics.RecordingWindow.expandedHeight
+                   : LayoutMetrics.RecordingWindow.size.height)
+        .animation(.easeInOut(duration: 0.25), value: showLiveTranscript)
         .clipShape(RoundedRectangle(cornerRadius: LayoutMetrics.RecordingWindow.cornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: LayoutMetrics.RecordingWindow.cornerRadius, style: .continuous)
@@ -231,7 +244,7 @@ private struct RecordingWaveformView: View {
 }
 
 #Preview("Recording Window") {
-    WaveformRecordingView(status: .ready, audioLevel: 0.1, onTap: {})
+    WaveformRecordingView(status: .ready, audioLevel: 0.1, liveTranscript: "", onTap: {})
         .padding(40)
         .background(Color(nsColor: .windowBackgroundColor))
 }

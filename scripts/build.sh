@@ -214,7 +214,7 @@ cat >AudioWhisper.app/Contents/Info.plist <<EOF
     <key>NSMicrophoneUsageDescription</key>
     <string>AudioWhisper needs access to your microphone to record audio for transcription.</string>
     <key>LSUIElement</key>
-    <false/>
+    <true/>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSExceptionDomains</key>
@@ -322,10 +322,10 @@ else
 fi
 
 if [ -n "$SIGNING_IDENTITY" ]; then
-  sign_app "$SIGNING_IDENTITY" "$SIGNING_NAME"
+  sign_app "$SIGNING_IDENTITY" "$SIGNING_NAME" || exit 1
 else
-  echo "💡 No Developer ID found. App will be unsigned."
-  echo "💡 To sign the app, get a Developer ID certificate from Apple Developer Portal."
+  echo "💡 No Developer ID found. Falling back to ad-hoc self-signing."
+  sign_app "-" "Ad Hoc (self-signed)" || exit 1
 fi
 
 # Clean up entitlements file

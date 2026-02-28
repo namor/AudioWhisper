@@ -9,8 +9,6 @@ internal extension ContentView {
             return
         }
 
-        // If the user selected local Whisper, ensure the model download has started so recording can proceed
-        // and transcription can wait on the download if needed.
         if transcriptionProvider == .local {
             startWhisperModelDownloadIfNeeded(selectedWhisperModel)
         }
@@ -18,6 +16,9 @@ internal extension ContentView {
         lastAudioURL = nil
         
         let success = audioRecorder.startRecording()
+        if success, liveTranscriptionProvider != .off, let stream = audioRecorder.audioDataStream {
+            liveTranscriptionService.start(audioStream: stream, provider: liveTranscriptionProvider)
+        }
         if !success {
             errorMessage = LocalizedStrings.Errors.failedToStartRecording
             showError = true
@@ -27,7 +28,8 @@ internal extension ContentView {
     func stopAndProcess() {
         processingTask?.cancel()
         NotificationCenter.default.post(name: .recordingStopped, object: nil)
-        
+
+        let liveWasActive = liveTranscriptionService.isActive
         let shouldHintThisRun = !hasShownFirstModelUseHint && isLocalModelInvocationPlanned()
         if shouldHintThisRun { showFirstModelUseHint = true }
 
@@ -35,111 +37,90 @@ internal extension ContentView {
             isProcessing = true
             transcriptionStartTime = Date()
             progressMessage = "Preparing audio..."
-            
+
             do {
                 try Task.checkCancellation()
                 guard let audioURL = audioRecorder.stopRecording() else {
+                    liveTranscriptionService.stop()
                     throw NSError(domain: "AudioRecorder", code: 1, userInfo: [NSLocalizedDescriptionKey: LocalizedStrings.Errors.failedToGetRecordingURL])
                 }
                 let sessionDuration = audioRecorder.lastRecordingDuration
-                
+
                 guard !audioURL.path.isEmpty else {
+                    liveTranscriptionService.stop()
                     throw NSError(domain: "AudioRecorder", code: 2, userInfo: [NSLocalizedDescriptionKey: LocalizedStrings.Errors.recordingURLEmpty])
                 }
-                
+
                 lastAudioURL = audioURL
                 try Task.checkCancellation()
-                
-                let (text, speakerTurns) = try await executeTranscription(audioURL: audioURL)
-                
-                try Task.checkCancellation()
-                
-                let modeRaw = UserDefaults.standard.string(forKey: AppDefaults.Keys.semanticCorrectionMode) ?? SemanticCorrectionMode.off.rawValue
-                let mode = SemanticCorrectionMode(rawValue: modeRaw) ?? .off
-                var finalText = text
-                let sourceBundleId: String? = await MainActor.run { currentSourceAppInfo().bundleIdentifier }
-                if mode != .off {
-                    await MainActor.run { progressMessage = "Semantic correction..." }
-                    let outcome = await semanticCorrectionService.correctWithWarning(text: text, providerUsed: transcriptionProvider, sourceAppBundleId: sourceBundleId)
-                    if let warning = outcome.warning {
-                        await MainActor.run { progressMessage = warning }
-                    }
-                    let trimmed = outcome.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty {
-                        finalText = outcome.text
-                    }
-                }
-                let wordCount = UsageMetricsStore.estimatedWordCount(for: finalText)
-                let characterCount = finalText.count
 
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(finalText, forType: .string)
-                let shouldSave: Bool = await MainActor.run { DataManager.shared.isHistoryEnabled }
-                if shouldSave {
-                    let modelUsed: String? = await MainActor.run { (transcriptionProvider == .local) ? self.selectedWhisperModel.rawValue : nil }
-                    let sourceInfo: SourceAppInfo = await MainActor.run { currentSourceAppInfo() }
-                    let record = TranscriptionRecord(
-                        text: finalText,
-                        provider: transcriptionProvider,
-                        duration: sessionDuration,
-                        modelUsed: modelUsed,
-                        wordCount: wordCount,
-                        characterCount: characterCount,
-                        sourceAppBundleId: sourceInfo.bundleIdentifier,
-                        sourceAppName: sourceInfo.displayName,
-                        sourceAppIconData: sourceInfo.iconData,
-                        speakerTurns: speakerTurns
-                    )
-                    await DataManager.shared.saveTranscriptionQuietly(record)
-                }
-                await MainActor.run {
-                    UsageMetricsStore.shared.recordSession(
-                        duration: sessionDuration,
-                        wordCount: wordCount,
-                        characterCount: characterCount
-                    )
-                    recordSourceUsage(words: wordCount, characters: characterCount)
-                    transcriptionStartTime = nil
-                    showConfirmationAndPaste(text: finalText)
-                    if shouldHintThisRun { hasShownFirstModelUseHint = true; showFirstModelUseHint = false }
-                }
-            } catch is CancellationError {
-                await MainActor.run {
-                    isProcessing = false
-                    transcriptionStartTime = nil
-                    if shouldHintThisRun { hasShownFirstModelUseHint = true; showFirstModelUseHint = false }
-                }
-            } catch {
-                if case let SpeechToTextError.localTranscriptionFailed(inner) = error,
-                   let lwError = inner as? LocalWhisperError,
-                   lwError == .modelNotDownloaded {
-                    await MainActor.run {
-                        errorMessage = "Local Whisper model not downloaded. Opening Settings…"
-                        showError = true
-                        isProcessing = false
+                if liveWasActive {
+                    progressMessage = "Finalizing transcription..."
+                    let liveResult = await liveTranscriptionService.finalize()
+
+                    if !liveResult.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        let result = try await buildFastPathResult(
+                            liveResult: liveResult, audioURL: audioURL
+                        )
+                        let finalText = try await correctAndCommit(
+                            result: result, duration: sessionDuration
+                        )
                         transcriptionStartTime = nil
-                        DashboardWindowManager.shared.showDashboardWindow(selectedNav: .providers)
-                        if shouldHintThisRun { hasShownFirstModelUseHint = true; showFirstModelUseHint = false }
-                    }
-                } else if let pe = error as? ParakeetError, pe == .modelNotReady {
-                    await MainActor.run {
-                        errorMessage = "Parakeet model not downloaded. Opening Settings…"
-                        showError = true
-                        isProcessing = false
-                        transcriptionStartTime = nil
-                        DashboardWindowManager.shared.showDashboardWindow(selectedNav: .providers)
-                        if shouldHintThisRun { hasShownFirstModelUseHint = true; showFirstModelUseHint = false }
+                        showConfirmationAndPaste(text: finalText)
+                        dismissHintIfNeeded(shouldHintThisRun)
+                        return
                     }
                 } else {
-                    await MainActor.run {
-                        errorMessage = error.localizedDescription
-                        showError = true
-                        isProcessing = false
-                        transcriptionStartTime = nil
-                        if shouldHintThisRun { hasShownFirstModelUseHint = true; showFirstModelUseHint = false }
-                    }
+                    liveTranscriptionService.stop()
                 }
+
+                try await ensureModelReadyIfLocal()
+                let result = try await transcribeWithPipeline(audioURL: audioURL)
+                try Task.checkCancellation()
+
+                let finalText = try await correctAndCommit(
+                    result: result, duration: sessionDuration
+                )
+
+                transcriptionStartTime = nil
+                showConfirmationAndPaste(text: finalText)
+                dismissHintIfNeeded(shouldHintThisRun)
+            } catch is CancellationError {
+                resetProcessingState()
+                dismissHintIfNeeded(shouldHintThisRun)
+            } catch {
+                handleTranscriptionError(error)
+                dismissHintIfNeeded(shouldHintThisRun)
             }
+        }
+    }
+
+    /// Fast path: reuse live transcription text, optionally run offline
+    /// diarization on the WAV and align using segment timings.
+    private func buildFastPathResult(
+        liveResult: LiveTranscriptionResult,
+        audioURL: URL
+    ) async throws -> TranscriptionResult {
+        let diarizationEnabled = UserDefaults.standard.bool(
+            forKey: AppDefaults.Keys.diarizationEnabled
+        )
+        guard diarizationEnabled, !liveResult.segments.isEmpty else {
+            return TranscriptionResult(text: liveResult.text, speakerTurns: nil)
+        }
+
+        progressMessage = "Detecting speakers..."
+        do {
+            let diarSegments = try await pipeline.speechService.diarizationService
+                .diarize(audioURL: audioURL)
+            let turns = DiarizationService.align(
+                asrSegments: liveResult.segments, diarSegments: diarSegments
+            )
+            return TranscriptionResult(
+                text: liveResult.text, speakerTurns: turns.isEmpty ? nil : turns
+            )
+        } catch {
+            Logger.app.warning("Post-recording diarization failed, returning flat text: \(error.localizedDescription)")
+            return TranscriptionResult(text: liveResult.text, speakerTurns: nil)
         }
     }
 
@@ -159,120 +140,246 @@ internal extension ContentView {
                 lastAudioURL = audioURL
                 try Task.checkCancellation()
 
-                let text: String
-                var speakerTurns: [SpeakerTurn]?
-                let diarizationEnabled = UserDefaults.standard.bool(forKey: AppDefaults.Keys.diarizationEnabled)
-
-                if diarizationEnabled && transcriptionProvider == .local {
-                    try await ensureWhisperModelIsReadyForTranscription(selectedWhisperModel)
-                    await MainActor.run { progressMessage = "Transcribing with speaker detection..." }
-                    let result = try await speechService.transcribeRawWithDiarization(
-                        audioURL: audioURL, model: selectedWhisperModel
-                    ) { progress in
-                        NotificationCenter.default.post(name: .transcriptionProgress, object: progress)
-                    }
-                    text = result.text
-                    speakerTurns = result.speakerTurns
-                } else if transcriptionProvider == .local {
-                    try await ensureWhisperModelIsReadyForTranscription(selectedWhisperModel)
-                    text = try await speechService.transcribeRaw(audioURL: audioURL, provider: transcriptionProvider, model: selectedWhisperModel)
-                } else {
-                    text = try await speechService.transcribeRaw(audioURL: audioURL, provider: transcriptionProvider)
-                }
-
+                try await ensureModelReadyIfLocal()
+                let result = try await transcribeWithPipeline(audioURL: audioURL)
                 try Task.checkCancellation()
 
-                let modeRaw = UserDefaults.standard.string(forKey: AppDefaults.Keys.semanticCorrectionMode) ?? SemanticCorrectionMode.off.rawValue
-                let mode = SemanticCorrectionMode(rawValue: modeRaw) ?? .off
-                var finalText = text
-                let sourceBundleId: String? = await MainActor.run { currentSourceAppInfo().bundleIdentifier }
-                if mode != .off {
-                    await MainActor.run { progressMessage = "Semantic correction..." }
-                    let outcome = await semanticCorrectionService.correctWithWarning(text: text, providerUsed: transcriptionProvider, sourceAppBundleId: sourceBundleId)
-                    if let warning = outcome.warning {
-                        await MainActor.run { progressMessage = warning }
-                    }
-                    let trimmed = outcome.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty {
-                        finalText = outcome.text
-                    }
-                }
-                let wordCount = UsageMetricsStore.estimatedWordCount(for: finalText)
-                let characterCount = finalText.count
+                let estimatedDuration = Self.estimateDuration(for: audioURL)
+                let finalText = try await correctAndCommit(
+                    result: result, duration: estimatedDuration
+                )
 
-                let fileAttributes = try? FileManager.default.attributesOfItem(atPath: audioURL.path)
-                let fileSize = (fileAttributes?[.size] as? Int64) ?? 0
-                let estimatedDuration = TimeInterval(fileSize) / 16000.0
-
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(finalText, forType: .string)
-                let shouldSave: Bool = await MainActor.run { DataManager.shared.isHistoryEnabled }
-                if shouldSave {
-                    let modelUsed: String? = await MainActor.run { (transcriptionProvider == .local) ? self.selectedWhisperModel.rawValue : nil }
-                    let sourceInfo: SourceAppInfo = await MainActor.run { currentSourceAppInfo() }
-                    let record = TranscriptionRecord(
-                        text: finalText,
-                        provider: transcriptionProvider,
-                        duration: estimatedDuration,
-                        modelUsed: modelUsed,
-                        wordCount: wordCount,
-                        characterCount: characterCount,
-                        sourceAppBundleId: sourceInfo.bundleIdentifier,
-                        sourceAppName: sourceInfo.displayName,
-                        sourceAppIconData: sourceInfo.iconData,
-                        speakerTurns: speakerTurns
-                    )
-                    await DataManager.shared.saveTranscriptionQuietly(record)
-                }
-                await MainActor.run {
-                    UsageMetricsStore.shared.recordSession(
-                        duration: estimatedDuration,
-                        wordCount: wordCount,
-                        characterCount: characterCount
-                    )
-                    recordSourceUsage(words: wordCount, characters: characterCount)
-                    transcriptionStartTime = nil
-                    showConfirmationAndPaste(text: finalText)
-                    if shouldHintThisRun { hasShownFirstModelUseHint = true; showFirstModelUseHint = false }
-                }
+                transcriptionStartTime = nil
+                showConfirmationAndPaste(text: finalText)
+                dismissHintIfNeeded(shouldHintThisRun)
             } catch is CancellationError {
-                await MainActor.run {
-                    isProcessing = false
-                    transcriptionStartTime = nil
-                    if shouldHintThisRun { hasShownFirstModelUseHint = true; showFirstModelUseHint = false }
-                }
+                resetProcessingState()
+                dismissHintIfNeeded(shouldHintThisRun)
             } catch {
-                if case let SpeechToTextError.localTranscriptionFailed(inner) = error,
-                   let lwError = inner as? LocalWhisperError,
-                   lwError == .modelNotDownloaded {
-                    await MainActor.run {
-                        errorMessage = "Local Whisper model not downloaded. Opening Settings…"
-                        showError = true
-                        isProcessing = false
-                        transcriptionStartTime = nil
-                        DashboardWindowManager.shared.showDashboardWindow(selectedNav: .providers)
-                        if shouldHintThisRun { hasShownFirstModelUseHint = true; showFirstModelUseHint = false }
-                    }
-                } else if let pe = error as? ParakeetError, pe == .modelNotReady {
-                    await MainActor.run {
-                        errorMessage = "Parakeet model not downloaded. Opening Settings…"
-                        showError = true
-                        isProcessing = false
-                        transcriptionStartTime = nil
-                        DashboardWindowManager.shared.showDashboardWindow(selectedNav: .providers)
-                        if shouldHintThisRun { hasShownFirstModelUseHint = true; showFirstModelUseHint = false }
-                    }
-                } else {
-                    await MainActor.run {
-                        errorMessage = error.localizedDescription
-                        showError = true
-                        isProcessing = false
-                        transcriptionStartTime = nil
-                        if shouldHintThisRun { hasShownFirstModelUseHint = true; showFirstModelUseHint = false }
-                    }
-                }
+                handleTranscriptionError(error)
+                dismissHintIfNeeded(shouldHintThisRun)
             }
         }
+    }
+
+    func retryLastTranscription() {
+        guard !isProcessing else { return }
+        
+        guard let audioURL = lastAudioURL else {
+            errorMessage = "No audio file available to retry. Please record again."
+            showError = true
+            return
+        }
+        
+        guard FileManager.default.fileExists(atPath: audioURL.path) else {
+            errorMessage = "Audio file no longer exists. Please record again."
+            showError = true
+            lastAudioURL = nil
+            return
+        }
+        
+        processingTask?.cancel()
+        
+        processingTask = Task {
+            isProcessing = true
+            transcriptionStartTime = Date()
+            progressMessage = "Retrying transcription..."
+            
+            do {
+                try Task.checkCancellation()
+
+                try await ensureModelReadyIfLocal()
+                let result = try await transcribeWithPipeline(audioURL: audioURL, isRetry: true)
+                try Task.checkCancellation()
+
+                if pipeline.shouldAwaitCorrectionForPaste(provider: transcriptionProvider) {
+                    awaitingSemanticPaste = true
+                    progressMessage = "Semantic correction..."
+
+                    let capturedProvider = transcriptionProvider
+                    let capturedModel: String? = (capturedProvider == .local)
+                        ? selectedWhisperModel.rawValue : nil
+                    let sourceInfo = currentSourceAppInfo()
+                    let sourceBundleId = sourceInfo.bundleIdentifier
+                    let speakerTurns = result.speakerTurns
+
+                    Task.detached { [pipeline] in
+                        let correction = await pipeline.applyCorrection(
+                            text: result.text, provider: capturedProvider,
+                            sourceAppBundleId: sourceBundleId
+                        )
+                        let corrected = correction.text
+                        let metrics = await pipeline.commitResult(
+                            text: corrected, provider: capturedProvider,
+                            duration: nil, modelUsed: capturedModel,
+                            sourceInfo: sourceInfo, speakerTurns: speakerTurns
+                        )
+                        await MainActor.run { [self] in
+                            if let w = correction.warning { progressMessage = w }
+                            UsageMetricsStore.shared.recordSession(
+                                duration: nil, wordCount: metrics.wordCount,
+                                characterCount: metrics.characterCount
+                            )
+                            recordSourceUsage(
+                                words: metrics.wordCount,
+                                characters: metrics.characterCount
+                            )
+                            transcriptionStartTime = nil
+                            isProcessing = false
+                            showConfirmationAndPaste(text: corrected)
+                            if awaitingSemanticPaste {
+                                performUserTriggeredPaste()
+                                awaitingSemanticPaste = false
+                            }
+                        }
+                    }
+                } else {
+                    transcriptionStartTime = nil
+                    showConfirmationAndPaste(text: result.text)
+
+                    let capturedProvider = transcriptionProvider
+                    let capturedModel: String? = (capturedProvider == .local)
+                        ? selectedWhisperModel.rawValue : nil
+                    let sourceInfo = currentSourceAppInfo()
+                    let sourceBundleId = sourceInfo.bundleIdentifier
+                    let speakerTurns = result.speakerTurns
+
+                    Task.detached { [pipeline] in
+                        let correction = await pipeline.applyCorrection(
+                            text: result.text, provider: capturedProvider,
+                            sourceAppBundleId: sourceBundleId
+                        )
+                        let _ = await pipeline.commitResult(
+                            text: correction.text, provider: capturedProvider,
+                            duration: nil, modelUsed: capturedModel,
+                            sourceInfo: sourceInfo, speakerTurns: speakerTurns
+                        )
+                    }
+                }
+            } catch is CancellationError {
+                resetProcessingState()
+            } catch {
+                handleTranscriptionError(error)
+            }
+        }
+    }
+
+    // MARK: - Shared Pipeline Helpers
+
+    /// Route transcription through the pipeline with progress updates.
+    private func transcribeWithPipeline(
+        audioURL: URL, isRetry: Bool = false
+    ) async throws -> TranscriptionResult {
+        let diarizationEnabled = UserDefaults.standard.bool(
+            forKey: AppDefaults.Keys.diarizationEnabled
+        )
+        let useDiarization = diarizationEnabled && transcriptionProvider == .local
+
+        if useDiarization {
+            await MainActor.run {
+                progressMessage = isRetry
+                    ? "Retrying with speaker detection..."
+                    : "Transcribing with speaker detection..."
+            }
+        }
+
+        return try await pipeline.transcribe(
+            audioURL: audioURL,
+            provider: transcriptionProvider,
+            model: (transcriptionProvider == .local) ? selectedWhisperModel : nil,
+            diarizationEnabled: useDiarization
+        )
+    }
+
+    /// Apply correction, commit to pasteboard/history, record metrics. Returns final text.
+    private func correctAndCommit(
+        result: TranscriptionResult,
+        duration: TimeInterval?
+    ) async throws -> String {
+        try Task.checkCancellation()
+
+        var finalText = result.text
+        let sourceBundleId: String? = currentSourceAppInfo().bundleIdentifier
+        if pipeline.isCorrectionEnabled {
+            progressMessage = "Semantic correction..."
+            let correction = await pipeline.applyCorrection(
+                text: result.text, provider: transcriptionProvider,
+                sourceAppBundleId: sourceBundleId
+            )
+            if let warning = correction.warning { progressMessage = warning }
+            finalText = correction.text
+        }
+
+        let modelUsed: String? = (transcriptionProvider == .local)
+            ? selectedWhisperModel.rawValue : nil
+        let sourceInfo = currentSourceAppInfo()
+        let metrics = await pipeline.commitResult(
+            text: finalText,
+            provider: transcriptionProvider,
+            duration: duration,
+            modelUsed: modelUsed,
+            sourceInfo: sourceInfo,
+            speakerTurns: result.speakerTurns
+        )
+
+        UsageMetricsStore.shared.recordSession(
+            duration: duration ?? 0,
+            wordCount: metrics.wordCount,
+            characterCount: metrics.characterCount
+        )
+        recordSourceUsage(words: metrics.wordCount, characters: metrics.characterCount)
+
+        return finalText
+    }
+
+    /// Ensure the local Whisper model is downloaded before transcription begins.
+    private func ensureModelReadyIfLocal() async throws {
+        guard transcriptionProvider == .local else { return }
+        try await ensureWhisperModelIsReadyForTranscription(selectedWhisperModel)
+    }
+
+    // MARK: - Error Handling
+
+    private func handleTranscriptionError(_ error: Error) {
+        if case let SpeechToTextError.localTranscriptionFailed(inner) = error,
+           let lwError = inner as? LocalWhisperError,
+           lwError == .modelNotDownloaded {
+            errorMessage = "Local Whisper model not downloaded. Opening Settings\u{2026}"
+            showError = true
+            isProcessing = false
+            transcriptionStartTime = nil
+            DashboardWindowManager.shared.showDashboardWindow(selectedNav: .providers)
+        } else if let pe = error as? ParakeetError, pe == .modelNotReady {
+            errorMessage = "Parakeet model not downloaded. Opening Settings\u{2026}"
+            showError = true
+            isProcessing = false
+            transcriptionStartTime = nil
+            DashboardWindowManager.shared.showDashboardWindow(selectedNav: .providers)
+        } else {
+            errorMessage = error.localizedDescription
+            showError = true
+            isProcessing = false
+            transcriptionStartTime = nil
+        }
+    }
+
+    private func resetProcessingState() {
+        isProcessing = false
+        transcriptionStartTime = nil
+    }
+
+    private func dismissHintIfNeeded(_ shouldHint: Bool) {
+        guard shouldHint else { return }
+        hasShownFirstModelUseHint = true
+        showFirstModelUseHint = false
+    }
+
+    // MARK: - Utilities
+
+    private static func estimateDuration(for audioURL: URL) -> TimeInterval {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: audioURL.path)
+        let fileSize = (attrs?[.size] as? Int64) ?? 0
+        return TimeInterval(fileSize) / 16000.0
     }
 
     func showConfirmationAndPaste(text: String) {
@@ -307,152 +414,8 @@ internal extension ContentView {
         }
     }
     
-    func retryLastTranscription() {
-        guard !isProcessing else { return }
-        
-        guard let audioURL = lastAudioURL else {
-            errorMessage = "No audio file available to retry. Please record again."
-            showError = true
-            return
-        }
-        
-        guard FileManager.default.fileExists(atPath: audioURL.path) else {
-            errorMessage = "Audio file no longer exists. Please record again."
-            showError = true
-            lastAudioURL = nil
-            return
-        }
-        
-        processingTask?.cancel()
-        
-        processingTask = Task {
-            isProcessing = true
-            transcriptionStartTime = Date()
-            progressMessage = "Retrying transcription..."
-            
-            do {
-                try Task.checkCancellation()
-                
-                let (text, speakerTurns) = try await executeTranscription(audioURL: audioURL, isRetry: true)
-                
-                try Task.checkCancellation()
-                
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
-
-                let enableSmartPaste = UserDefaults.standard.bool(forKey: "enableSmartPaste")
-                let modeRaw = UserDefaults.standard.string(forKey: AppDefaults.Keys.semanticCorrectionMode) ?? SemanticCorrectionMode.off.rawValue
-                let mode = SemanticCorrectionMode(rawValue: modeRaw) ?? .off
-                let shouldAwaitSemanticForPaste = enableSmartPaste && ((mode == .localMLX) || (mode == .cloud && (transcriptionProvider == .openai || transcriptionProvider == .gemini)))
-
-                if shouldAwaitSemanticForPaste {
-                    await MainActor.run {
-                        awaitingSemanticPaste = true
-                        progressMessage = "Semantic correction..."
-                    }
-                    let capturedBundleId: String? = await MainActor.run { currentSourceAppInfo().bundleIdentifier }
-                    Task.detached { [text, transcriptionProvider, speakerTurns, capturedBundleId] in
-                        let outcome = await semanticCorrectionService.correctWithWarning(text: text, providerUsed: transcriptionProvider, sourceAppBundleId: capturedBundleId)
-                        if let warning = outcome.warning {
-                            await MainActor.run { progressMessage = warning }
-                        }
-                        let corrected = outcome.text
-                        let shouldSave2: Bool = await MainActor.run { DataManager.shared.isHistoryEnabled }
-                        if shouldSave2 {
-                            let modelUsed: String? = await MainActor.run { (transcriptionProvider == .local) ? self.selectedWhisperModel.rawValue : nil }
-                            let sourceInfo: SourceAppInfo = await MainActor.run { self.currentSourceAppInfo() }
-                            let record = TranscriptionRecord(
-                                text: corrected,
-                                provider: transcriptionProvider,
-                                duration: nil,
-                                modelUsed: modelUsed,
-                                sourceAppBundleId: sourceInfo.bundleIdentifier,
-                                sourceAppName: sourceInfo.displayName,
-                                sourceAppIconData: sourceInfo.iconData,
-                                speakerTurns: speakerTurns
-                            )
-                            await DataManager.shared.saveTranscriptionQuietly(record)
-                        }
-                        await MainActor.run {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(corrected, forType: .string)
-                            transcriptionStartTime = nil
-                            isProcessing = false
-                            showConfirmationAndPaste(text: corrected)
-                            if awaitingSemanticPaste {
-                                performUserTriggeredPaste()
-                                awaitingSemanticPaste = false
-                            }
-                        }
-                    }
-                } else {
-                    await MainActor.run {
-                        transcriptionStartTime = nil
-                        showConfirmationAndPaste(text: text)
-                    }
-                    let capturedBundleId2: String? = await MainActor.run { currentSourceAppInfo().bundleIdentifier }
-                    Task.detached { [text, transcriptionProvider, speakerTurns, capturedBundleId2] in
-                        let outcome = await semanticCorrectionService.correctWithWarning(text: text, providerUsed: transcriptionProvider, sourceAppBundleId: capturedBundleId2)
-                        if let warning = outcome.warning {
-                            await MainActor.run { progressMessage = warning }
-                        }
-                        let corrected = outcome.text
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(corrected, forType: .string)
-                        let shouldSave3: Bool = await MainActor.run { DataManager.shared.isHistoryEnabled }
-                        if shouldSave3 {
-                            let modelUsed: String? = await MainActor.run { (transcriptionProvider == .local) ? self.selectedWhisperModel.rawValue : nil }
-                            let sourceInfo: SourceAppInfo = await MainActor.run { self.currentSourceAppInfo() }
-                            let record = TranscriptionRecord(
-                                text: corrected,
-                                provider: transcriptionProvider,
-                                duration: nil,
-                                modelUsed: modelUsed,
-                                sourceAppBundleId: sourceInfo.bundleIdentifier,
-                                sourceAppName: sourceInfo.displayName,
-                                sourceAppIconData: sourceInfo.iconData,
-                                speakerTurns: speakerTurns
-                            )
-                            await DataManager.shared.saveTranscriptionQuietly(record)
-                        }
-                    }
-                }
-            } catch is CancellationError {
-                await MainActor.run {
-                    isProcessing = false
-                    transcriptionStartTime = nil
-                }
-            } catch {
-                await MainActor.run {
-                    errorMessage = error.localizedDescription
-                    showError = true
-                    isProcessing = false
-                    transcriptionStartTime = nil
-                }
-            }
-        }
-    }
-    
-    private func executeTranscription(audioURL: URL, isRetry: Bool = false) async throws -> (text: String, speakerTurns: [SpeakerTurn]?) {
-        let diarizationEnabled = UserDefaults.standard.bool(forKey: AppDefaults.Keys.diarizationEnabled)
-
-        if transcriptionProvider == .local {
-            try await ensureWhisperModelIsReadyForTranscription(selectedWhisperModel)
-            if diarizationEnabled {
-                await MainActor.run { progressMessage = isRetry ? "Retrying with speaker detection..." : "Transcribing with speaker detection..." }
-                return try await speechService.transcribeRawWithDiarization(
-                    audioURL: audioURL, model: selectedWhisperModel
-                ) { progress in
-                    NotificationCenter.default.post(name: .transcriptionProgress, object: progress)
-                }
-            } else {
-                let text = try await speechService.transcribeRaw(audioURL: audioURL, provider: transcriptionProvider, model: selectedWhisperModel)
-                return (text, nil)
-            }
-        } else {
-            let text = try await speechService.transcribeRaw(audioURL: audioURL, provider: transcriptionProvider)
-            return (text, nil)
-        }
+    func retryLastTranscriptionIfAvailable() {
+        retryLastTranscription()
     }
 
     func showLastAudioFile() {
@@ -501,7 +464,7 @@ internal extension ContentView {
         if WhisperKitStorage.isModelDownloaded(model) { return }
 
         await MainActor.run {
-            progressMessage = "Downloading \(model.displayName) model…"
+            progressMessage = "Downloading \(model.displayName) model\u{2026}"
         }
 
         do {
@@ -517,7 +480,7 @@ internal extension ContentView {
     }
 
     private func waitForWhisperModelDownload(_ model: WhisperModel) async throws {
-        let timeout: TimeInterval = 20 * 60 // 20 minutes
+        let timeout: TimeInterval = 20 * 60
         let startedAt = Date()
         var didRetry = false
 
@@ -535,13 +498,13 @@ internal extension ContentView {
                 await MainActor.run {
                     switch stage {
                     case .preparing:
-                        progressMessage = "Preparing \(model.displayName) model…"
+                        progressMessage = "Preparing \(model.displayName) model\u{2026}"
                     case .downloading:
-                        progressMessage = "Downloading \(model.displayName) model…"
+                        progressMessage = "Downloading \(model.displayName) model\u{2026}"
                     case .processing:
-                        progressMessage = "Processing \(model.displayName) model…"
+                        progressMessage = "Processing \(model.displayName) model\u{2026}"
                     case .completing:
-                        progressMessage = "Finalizing \(model.displayName) model…"
+                        progressMessage = "Finalizing \(model.displayName) model\u{2026}"
                     case .ready:
                         progressMessage = "Model ready"
                     case .failed(let message):
@@ -553,18 +516,15 @@ internal extension ContentView {
                     throw SpeechToTextError.transcriptionFailed(message)
                 }
             } else {
-                // Stage may be cleared after a failure; retry once.
                 if !didRetry {
                     didRetry = true
                     do {
                         try await modelManager.downloadModel(model)
                         continue
-                    } catch {
-                        // Fall through to keep waiting/polling with best-effort messaging.
-                    }
+                    } catch { }
                 }
                 await MainActor.run {
-                    progressMessage = "Downloading \(model.displayName) model…"
+                    progressMessage = "Downloading \(model.displayName) model\u{2026}"
                 }
             }
 

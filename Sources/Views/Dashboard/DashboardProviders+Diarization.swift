@@ -16,6 +16,15 @@ internal extension DashboardProvidersView {
                 if diarizationEnabled {
                     diarizationModelStatus
 
+                    Picker("Number of Speakers", selection: $diarizationSpeakerCount) {
+                        Text("Auto-detect").tag(0)
+                        ForEach(2...10, id: \.self) { n in
+                            Text("\(n) speakers").tag(n)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .help("Set the exact speaker count for better accuracy, or leave on Auto.")
+
                     Label("Works with Local Whisper engine. Other engines coming soon.", systemImage: "info.circle")
                         .foregroundStyle(.secondary)
                         .font(.callout)
