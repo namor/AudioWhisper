@@ -109,13 +109,19 @@ internal struct SpeakerTurn: Codable, Hashable, Sendable {
 internal enum ParakeetModel: String, CaseIterable, Codable, Sendable {
     case v2English = "mlx-community/parakeet-tdt-0.6b-v2"
     case v3Multilingual = "mlx-community/parakeet-tdt-0.6b-v3"
+    case rnnt1_1b = "mlx-community/parakeet-rnnt-1.1b"
+    case tdt1_1b = "mlx-community/parakeet-tdt-1.1b"
 
     var displayName: String {
         switch self {
         case .v2English:
-            return "v2 English (~2.5 GB)"
+            return "TDT 0.6B v2 English (~2.5 GB)"
         case .v3Multilingual:
-            return "v3 Multilingual (~2.5 GB)"
+            return "TDT 0.6B v3 Multilingual (~2.5 GB)"
+        case .rnnt1_1b:
+            return "RNNT 1.1B — Best Accuracy (~4.3 GB)"
+        case .tdt1_1b:
+            return "TDT 1.1B — Fast + Accurate (~4.3 GB)"
         }
     }
 
@@ -125,6 +131,19 @@ internal enum ParakeetModel: String, CaseIterable, Codable, Sendable {
             return "English only, original model"
         case .v3Multilingual:
             return "25 languages, auto-detection"
+        case .rnnt1_1b:
+            return "English, lowest WER (7.04% avg)"
+        case .tdt1_1b:
+            return "English, 64% faster than RNNT"
+        }
+    }
+
+    var estimatedSizeGB: Double {
+        switch self {
+        case .v2English, .v3Multilingual:
+            return 2.5
+        case .rnnt1_1b, .tdt1_1b:
+            return 4.3
         }
     }
 

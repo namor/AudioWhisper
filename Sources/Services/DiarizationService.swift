@@ -30,33 +30,46 @@ internal final class DiarizationService: DiarizationServiceProtocol, @unchecked 
     private let lock = NSLock()
     private var _manager: OfflineDiarizerManager?
     private var _modelsPrepared = false
+    private var _configuredSpeakerCount: Int = -1
 
-    private static func makeDiarizationConfig() -> OfflineDiarizerConfig {
-        OfflineDiarizerConfig(
+    static func makeDiarizationConfig(speakerCount: Int = 0) -> OfflineDiarizerConfig {
+        var config = OfflineDiarizerConfig(
             clustering: .init(
-                threshold: 0.4,
+                threshold: 0.6,
                 warmStartFa: 0.07,
-                warmStartFb: 0.8,
-                minSpeakers: 2
+                warmStartFb: 0.8
             )
         )
+        if speakerCount > 0 {
+            config.clustering.numSpeakers = speakerCount
+        }
+        return config
     }
 
-    func prepareModels() async throws {
+    private func prepareManager(speakerCount: Int) async throws {
         guard Arch.isAppleSilicon else { throw DiarizationError.notAppleSilicon }
         do {
-            let config = Self.makeDiarizationConfig()
+            let config = Self.makeDiarizationConfig(speakerCount: speakerCount)
             let mgr = OfflineDiarizerManager(config: config)
             try await mgr.prepareModels()
             lock.withLock {
                 _manager = mgr
                 _modelsPrepared = true
+                _configuredSpeakerCount = speakerCount
             }
-            logger.info("Diarization models prepared successfully")
+            let mode = speakerCount > 0 ? "exact=\(speakerCount)" : "auto"
+            logger.info("Diarization models prepared (speakers: \(mode))")
         } catch {
             logger.error("Failed to prepare diarization models: \(error.localizedDescription)")
             throw DiarizationError.modelPreparationFailed(error.localizedDescription)
         }
+    }
+
+    func prepareModels() async throws {
+        let speakerCount = UserDefaults.standard.integer(
+            forKey: AppDefaults.Keys.diarizationSpeakerCount
+        )
+        try await prepareManager(speakerCount: speakerCount)
     }
 
     var areModelsPrepared: Bool { lock.withLock { _modelsPrepared } }
@@ -64,17 +77,29 @@ internal final class DiarizationService: DiarizationServiceProtocol, @unchecked 
     func diarize(audioURL: URL) async throws -> [(speakerId: String, start: TimeInterval, end: TimeInterval)] {
         guard Arch.isAppleSilicon else { throw DiarizationError.notAppleSilicon }
         do {
-            let needsPrepare = lock.withLock { _manager == nil }
+            let desiredCount = UserDefaults.standard.integer(
+                forKey: AppDefaults.Keys.diarizationSpeakerCount
+            )
+            let needsPrepare: Bool = lock.withLock {
+                _manager == nil || _configuredSpeakerCount != desiredCount
+            }
             if needsPrepare {
-                try await prepareModels()
+                try await prepareManager(speakerCount: desiredCount)
             }
             let mgr: OfflineDiarizerManager? = lock.withLock { _manager }
             guard let mgr else {
                 throw DiarizationError.diarizationFailed("Manager not initialized")
             }
+            let mode = desiredCount > 0 ? "exact=\(desiredCount)" : "auto"
+            logger.info("Starting diarization (speakers: \(mode))")
             let result = try await mgr.process(audioURL)
             let uniqueSpeakers = Set(result.segments.map { $0.speakerId })
             logger.info("Diarization complete: \(result.segments.count) segments, \(uniqueSpeakers.count) unique speakers (\(uniqueSpeakers.sorted().joined(separator: ", ")))")
+            for speaker in uniqueSpeakers.sorted() {
+                let segs = result.segments.filter { $0.speakerId == speaker }
+                let duration = segs.reduce(0.0) { $0 + Double($1.endTimeSeconds - $1.startTimeSeconds) }
+                logger.info("  \(speaker): \(segs.count) segments, \(String(format: "%.1f", duration))s total")
+            }
             return result.segments.map { seg in
                 (speakerId: seg.speakerId, start: TimeInterval(seg.startTimeSeconds), end: TimeInterval(seg.endTimeSeconds))
             }

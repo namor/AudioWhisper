@@ -40,6 +40,7 @@ internal struct DashboardProvidersView: View {
 
     // Diarization settings
     @AppStorage(AppDefaults.Keys.diarizationEnabled) var diarizationEnabled = false
+    @AppStorage(AppDefaults.Keys.diarizationSpeakerCount) var diarizationSpeakerCount = 0
     @State var isDiarizationPreparing = false
     @State var isDiarizationReady = false
     @State var diarizationStatusMessage: String?
@@ -97,7 +98,7 @@ internal struct DashboardProvidersView: View {
             } header: {
                 Text("Live Transcription")
             } footer: {
-                Text("Stream text while recording. FluidAudio uses the Parakeet model (downloads ~600 MB on first use).")
+                Text("Stream text while recording. Model downloads on first use.")
             }
 
             Section {

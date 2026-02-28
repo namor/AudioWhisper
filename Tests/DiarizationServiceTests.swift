@@ -91,4 +91,29 @@ final class DiarizationServiceTests: XCTestCase {
         let service = DiarizationService()
         XCTAssertFalse(service.areModelsPrepared)
     }
+
+    func testDiarizationConfigDoesNotForceSpeakerCount() {
+        let config = DiarizationService.makeDiarizationConfig()
+        XCTAssertNil(config.clustering.numSpeakers)
+        XCTAssertNil(config.clustering.minSpeakers)
+        XCTAssertNil(config.clustering.maxSpeakers)
+    }
+
+    func testDiarizationConfigUsesCommunityThreshold() {
+        let config = DiarizationService.makeDiarizationConfig()
+        XCTAssertEqual(config.clustering.threshold, 0.6, accuracy: 1e-9)
+        XCTAssertEqual(config.clustering.warmStartFa, 0.07, accuracy: 1e-9)
+        XCTAssertEqual(config.clustering.warmStartFb, 0.8, accuracy: 1e-9)
+    }
+
+    func testDiarizationConfigWithExactSpeakerCount() {
+        let config = DiarizationService.makeDiarizationConfig(speakerCount: 5)
+        XCTAssertEqual(config.clustering.numSpeakers, 5)
+        XCTAssertEqual(config.clustering.threshold, 0.6, accuracy: 1e-9)
+    }
+
+    func testDiarizationConfigZeroSpeakerCountMeansAuto() {
+        let config = DiarizationService.makeDiarizationConfig(speakerCount: 0)
+        XCTAssertNil(config.clustering.numSpeakers)
+    }
 }

@@ -47,6 +47,7 @@ extension LiveTranscriptionBackend {
 internal enum LiveTranscriptionProvider: String, CaseIterable, Codable, Sendable {
     case off = "off"
     case fluidAudio = "fluidAudio"
+    case parakeetMLX = "parakeetMLX"
     case appleSpeech = "appleSpeech"
 
     var displayName: String {
@@ -55,6 +56,8 @@ internal enum LiveTranscriptionProvider: String, CaseIterable, Codable, Sendable
             return "Off"
         case .fluidAudio:
             return "FluidAudio Streaming"
+        case .parakeetMLX:
+            return "Parakeet MLX (Advanced)"
         case .appleSpeech:
             return "Apple Speech (Live)"
         }
@@ -65,7 +68,7 @@ internal enum LiveTranscriptionProvider: String, CaseIterable, Codable, Sendable
     }
 
     static var availableProviders: [LiveTranscriptionProvider] {
-        var providers: [LiveTranscriptionProvider] = [.off, .fluidAudio]
+        var providers: [LiveTranscriptionProvider] = [.off, .fluidAudio, .parakeetMLX]
         #if swift(>=6.2)
         if #available(macOS 26, *) {
             providers.append(.appleSpeech)

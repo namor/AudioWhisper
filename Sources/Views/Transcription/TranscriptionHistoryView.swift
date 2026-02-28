@@ -250,6 +250,7 @@ private struct TranscriptionHistoryEmptyContent: View {
 
 private struct TranscriptionDetailView: View {
     let record: TranscriptionRecord
+    @State private var copiedVariant: String?
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -259,15 +260,65 @@ private struct TranscriptionDetailView: View {
 
             Divider()
 
+            VStack(spacing: 0) {
+                copyBar
+                Divider()
+                transcriptContent
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var copyBar: some View {
+        HStack(spacing: 6) {
             if let turns = record.speakerTurns, !turns.isEmpty {
-                DiarizedTranscriptView(turns: turns)
-            } else {
-                ScrollView {
-                    Text(record.text)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
+                copyButton(label: "Copy Text", variant: "text") {
+                    record.text
                 }
+                copyButton(label: "Copy with Speakers", variant: "speakers", icon: "person.wave.2") {
+                    formatWithSpeakers(turns)
+                }
+            } else {
+                copyButton(label: "Copy", variant: "text") {
+                    record.text
+                }
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.bar)
+    }
+
+    private func copyButton(label: String, variant: String, icon: String = "doc.on.doc", text: @escaping () -> String) -> some View {
+        let isCopied = copiedVariant == variant
+        return Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text(), forType: .string)
+            withAnimation(.easeInOut(duration: 0.15)) { copiedVariant = variant }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if copiedVariant == variant { copiedVariant = nil }
+                }
+            }
+        } label: {
+            Label(isCopied ? "Copied!" : label, systemImage: isCopied ? "checkmark.circle.fill" : icon)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .tint(isCopied ? .green : nil)
+    }
+
+    @ViewBuilder
+    private var transcriptContent: some View {
+        if let turns = record.speakerTurns, !turns.isEmpty {
+            DiarizedTranscriptView(turns: turns)
+        } else {
+            ScrollView {
+                Text(record.text)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
             }
         }
     }

@@ -20,6 +20,8 @@ internal extension DashboardProvidersView {
         switch liveTranscriptionProvider {
         case .fluidAudio:
             fluidAudioCard
+        case .parakeetMLX:
+            parakeetMLXCard
         case .appleSpeech:
             Label("Uses Apple SpeechAnalyzer. Requires macOS 26 or later.",
                   systemImage: "info.circle")
@@ -94,6 +96,70 @@ internal extension DashboardProvidersView {
                     .buttonStyle(.borderedProminent)
                 }
             }
+        }
+        .padding(.horizontal, DashboardTheme.Spacing.md)
+        .padding(.vertical, DashboardTheme.Spacing.md)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var parakeetMLXCard: some View {
+        let repo = selectedParakeetModel.repoId
+        let isDownloaded = mlxModelManager.downloadedModels.contains(repo)
+        let isDownloading = mlxModelManager.isDownloading[repo] ?? false
+
+        VStack(alignment: .leading, spacing: DashboardTheme.Spacing.sm) {
+            HStack(spacing: DashboardTheme.Spacing.md) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: DashboardTheme.Spacing.sm) {
+                        Text(selectedParakeetModel.displayName)
+                            .font(DashboardTheme.Fonts.sans(14, weight: .medium))
+                            .foregroundStyle(DashboardTheme.ink)
+
+                        if selectedParakeetModel == .tdt1_1b {
+                            Text("RECOMMENDED")
+                                .font(DashboardTheme.Fonts.sans(9, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(DashboardTheme.accent)
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                        }
+                    }
+
+                    Text("Uses your selected Parakeet model • updates every ~5s")
+                        .font(DashboardTheme.Fonts.sans(12, weight: .regular))
+                        .foregroundStyle(DashboardTheme.inkMuted)
+                }
+
+                Spacer()
+
+                Text("~\(String(format: "%.1f", selectedParakeetModel.estimatedSizeGB)) GB")
+                    .font(DashboardTheme.Fonts.mono(11, weight: .regular))
+                    .foregroundStyle(DashboardTheme.inkMuted)
+
+                Group {
+                    if isDownloading {
+                        ProgressView().controlSize(.small)
+                    } else if isDownloaded {
+                        Text("Ready")
+                            .font(DashboardTheme.Fonts.sans(10, weight: .medium))
+                            .foregroundStyle(Color(red: 0.35, green: 0.60, blue: 0.40))
+                    } else {
+                        Button("Get") {
+                            Task { await mlxModelManager.ensureParakeetModel() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+
+            Label(
+                "Shares model cache with Parakeet transcription engine — no extra download if already installed",
+                systemImage: "arrow.triangle.2.circlepath"
+            )
+            .font(DashboardTheme.Fonts.sans(11, weight: .regular))
+            .foregroundStyle(DashboardTheme.inkMuted)
         }
         .padding(.horizontal, DashboardTheme.Spacing.md)
         .padding(.vertical, DashboardTheme.Spacing.md)

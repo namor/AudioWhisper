@@ -32,6 +32,7 @@ internal enum AppDefaults {
         static let lastWelcomeVersion = "lastWelcomeVersion"
 
         static let diarizationEnabled = "diarizationEnabled"
+        static let diarizationSpeakerCount = "diarizationSpeakerCount"
 
         static let liveTranscriptionProvider = "liveTranscriptionProvider"
 
@@ -76,6 +77,7 @@ internal enum AppDefaults {
             Keys.lastWelcomeVersion: "0",
 
             Keys.diarizationEnabled: false,
+            Keys.diarizationSpeakerCount: 0,
             Keys.liveTranscriptionProvider: defaultLiveTranscriptionProvider.rawValue,
             Keys.hasSetupLocalLLM: false,
             Keys.hasSetupParakeet: false

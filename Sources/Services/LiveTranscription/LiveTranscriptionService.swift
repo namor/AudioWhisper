@@ -115,6 +115,9 @@ internal class LiveTranscriptionService: ObservableObject {
 
         case .fluidAudio:
             return FluidAudioStreamingTranscriber()
+
+        case .parakeetMLX:
+            return ParakeetMLXStreamingTranscriber()
         }
     }
 }

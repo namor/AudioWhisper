@@ -55,7 +55,7 @@ internal extension DashboardProvidersView {
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 220)
+                    .frame(width: 280)
 
                     if isDownloading {
                         ProgressView().controlSize(.small)
@@ -84,9 +84,18 @@ internal extension DashboardProvidersView {
                     .foregroundStyle(.secondary)
             }
 
-            Label("Runs locally on Apple Silicon • ~2.5 GB disk space", systemImage: "apple.logo")
+            Label(
+                "Runs locally on Apple Silicon • ~\(String(format: "%.1f", selectedParakeetModel.estimatedSizeGB)) GB disk space",
+                systemImage: "apple.logo"
+            )
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+
+            if !selectedParakeetModel.description.isEmpty {
+                Text(selectedParakeetModel.description)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .onChange(of: selectedParakeetModel) { _, _ in
             Task { await mlxModelManager.ensureParakeetModel() }
